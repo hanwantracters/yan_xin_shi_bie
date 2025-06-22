@@ -233,3 +233,58 @@ class ImageProcessor:
         
         print("阈值分割结果:", result);
         return result 
+    
+    def create_morphology_kernel(self, kernel_shape: str = 'rect', kernel_size: Tuple[int, int] = (5, 5)) -> np.ndarray:
+        """创建形态学操作的核。
+
+        Args:
+            kernel_shape (str): 核的形状，可选 'rect', 'ellipse', 'cross'。
+            kernel_size (tuple): 核的大小。
+
+        Returns:
+            numpy.ndarray: 创建的形态学核。
+        """
+        if kernel_shape == 'rect':
+            return cv2.getStructuringElement(cv2.MORPH_RECT, kernel_size)
+        elif kernel_shape == 'ellipse':
+            return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, kernel_size)
+        elif kernel_shape == 'cross':
+            return cv2.getStructuringElement(cv2.MORPH_CROSS, kernel_size)
+        else:
+            # 默认返回矩形核
+            return cv2.getStructuringElement(cv2.MORPH_RECT, kernel_size)
+
+    def apply_morphological_postprocessing(
+        self, 
+        binary_image: np.ndarray, 
+        kernel_shape: str = 'rect', 
+        kernel_size: Tuple[int, int] = (5, 5), 
+        iterations: int = 1
+    ) -> dict:
+        """对二值图像进行形态学后处理（开运算和闭运算）。
+
+        Args:
+            binary_image (numpy.ndarray): 输入的二值图像。
+            kernel_shape (str): 核的形状。
+            kernel_size (tuple): 核的大小。
+            iterations (int): 迭代次数。
+
+        Returns:
+            dict: 包含处理后图像及相关参数的字典。
+        """
+        kernel = self.create_morphology_kernel(kernel_shape, kernel_size)
+        
+        # 1. 开运算 (Opening): 先腐蚀后膨胀，用于去除小的噪点
+        opened_image = cv2.morphologyEx(binary_image, cv2.MORPH_OPEN, kernel, iterations=iterations)
+        
+        # 2. 闭运算 (Closing): 先膨胀后腐蚀，用于连接断开的裂缝
+        closed_image = cv2.morphologyEx(opened_image, cv2.MORPH_CLOSE, kernel, iterations=iterations)
+        
+        result = {
+            'image': closed_image,
+            'kernel_shape': kernel_shape,
+            'kernel_size': kernel_size,
+            'iterations': iterations
+        }
+        
+        return result 

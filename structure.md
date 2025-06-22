@@ -19,6 +19,7 @@ rock-fracture-analyzer/
 │       │   ├── preview_window.py    # UI层: 预览窗口组件
 │       │   ├── analysis_preview_window.py # UI层: 分析预览窗口组件
 │       │   ├── measurement_dialog.py# UI层: 测量对话框组件
+│       │   ├── morphology_settings_dialog.py # UI层: 形态学参数设置对话框
 │       │   └── style_manager.py     # UI层: 样式表管理器
 │       │
 │       ├── core/

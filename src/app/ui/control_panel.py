@@ -21,6 +21,8 @@ from PyQt5.QtWidgets import (
     QRadioButton,
 )
 
+from .morphology_settings_dialog import MorphologySettingsDialog
+
 
 class ControlPanel(QWidget):
     """控制面板类，提供用户交互控制界面。
@@ -35,6 +37,7 @@ class ControlPanel(QWidget):
         thresholdChanged (pyqtSignal): 阈值滑块值变化时发出，携带整数值。
         thresholdMethodChanged (pyqtSignal): 阈值方法变化时发出，携带字符串。
         adaptiveParamsChanged (pyqtSignal): 自适应阈值参数变化时发出，携带字典。
+        morphologyParamsChanged = pyqtSignal(dict)
     """
 
     # 定义信号
@@ -44,6 +47,7 @@ class ControlPanel(QWidget):
     thresholdChanged = pyqtSignal(int)
     thresholdMethodChanged = pyqtSignal(str)
     adaptiveParamsChanged = pyqtSignal(dict)
+    morphologyParamsChanged = pyqtSignal(dict)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         """初始化控制面板。
@@ -53,6 +57,7 @@ class ControlPanel(QWidget):
         """
         super().__init__(parent)
         self._init_ui()
+        self.morphology_dialog = None # 用于持有对话框实例
 
     def _init_ui(self) -> None:
         """初始化UI组件和布局。"""
@@ -60,6 +65,7 @@ class ControlPanel(QWidget):
         self.load_image_btn = QPushButton("加载图像")
         self.start_analysis_btn = QPushButton("开始分析")
         self.measure_btn = QPushButton("测量")
+        self.morphology_settings_btn = QPushButton("形态学设置...")
 
         # 创建阈值方法选择组
         self._create_threshold_method_group()
@@ -75,6 +81,7 @@ class ControlPanel(QWidget):
         main_layout.addWidget(self.load_image_btn)
         main_layout.addWidget(self.start_analysis_btn)
         main_layout.addWidget(self.measure_btn)
+        main_layout.addWidget(self.morphology_settings_btn)
         main_layout.addWidget(self.threshold_method_group)
         main_layout.addWidget(self.global_threshold_widget)
         main_layout.addWidget(self.adaptive_threshold_widget)
@@ -152,6 +159,7 @@ class ControlPanel(QWidget):
         self.load_image_btn.clicked.connect(self._on_load_image_clicked)
         self.start_analysis_btn.clicked.connect(self.startAnalysisClicked)
         self.measure_btn.clicked.connect(self.measureToolClicked)
+        self.morphology_settings_btn.clicked.connect(self._on_morphology_settings_clicked)
         
         # 阈值信号
         self.threshold_slider.valueChanged.connect(self._on_threshold_changed)
@@ -160,6 +168,17 @@ class ControlPanel(QWidget):
         self.otsu_radio.toggled.connect(self._on_threshold_method_changed)
         self.block_size_slider.valueChanged.connect(self._on_adaptive_params_changed)
         self.c_value_slider.valueChanged.connect(self._on_adaptive_params_changed)
+
+    def _on_morphology_settings_clicked(self):
+        """处理形态学设置按钮点击事件。"""
+        if not self.morphology_dialog:
+            self.morphology_dialog = MorphologySettingsDialog(self)
+            self.morphology_dialog.paramsChanged.connect(self.morphologyParamsChanged)
+        
+        if self.morphology_dialog.isHidden():
+            self.morphology_dialog.show()
+        else:
+            self.morphology_dialog.activateWindow()
 
     def _on_threshold_method_changed(self):
         """处理阈值方法变化的槽函数。"""

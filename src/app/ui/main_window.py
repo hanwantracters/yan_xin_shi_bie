@@ -161,6 +161,7 @@ class MainWindow(QMainWindow):
         self.control_panel.thresholdChanged.connect(self._on_threshold_changed)
         self.control_panel.thresholdMethodChanged.connect(self._on_threshold_method_changed)
         self.control_panel.adaptiveParamsChanged.connect(self._on_adaptive_params_changed)
+        self.control_panel.morphologyParamsChanged.connect(self._on_morphology_params_changed)
         
     def _on_menu_open_image(self):
         """菜单栏打开图像处理函数。"""
@@ -199,7 +200,8 @@ class MainWindow(QMainWindow):
             # 更新结果面板显示DPI信息
             self.result_panel.update_dpi_info(dpi)
             
-            # 更新分析预览窗口
+            # 清除并更新分析预览窗口
+            self.analysis_preview_window.clear_all()
             self._update_analysis_preview()
             
             print(f"图像已成功加载: {file_path}")
@@ -240,6 +242,11 @@ class MainWindow(QMainWindow):
         self.controller.set_adaptive_params(params)
         self._update_analysis_preview()
 
+    def _on_morphology_params_changed(self, params):
+        """形态学参数变化处理函数。"""
+        self.controller.set_morphology_params(params)
+        self._update_analysis_preview()
+
     def _toggle_analysis_preview(self, checked):
         """切换分析预览窗口的显示和隐藏。"""
         if checked:
@@ -249,20 +256,56 @@ class MainWindow(QMainWindow):
             self.analysis_preview_window.hide()
 
     def _update_analysis_preview(self):
-        """更新分析预览窗口。"""
-        if self.analysis_preview_window.isVisible() and self.controller.get_current_image() is not None:
-            # 应用阈值分割
-            self.controller.apply_threshold_segmentation()
-            
-            # 获取所有分析结果并更新预览窗口
-            analysis_results = self.controller.get_all_analysis_results()
-            print("\n----- 主窗口: 更新分析预览窗口 -----")
-            print(f"分析结果包含的阶段: {[stage.name for stage in analysis_results.keys()]}")
-            for stage in analysis_results:
-                print(f"阶段 {stage.name} 结果包含键: {list(analysis_results[stage].keys())}")
-            
-            self.analysis_preview_window.update_preview(analysis_results)
-            print("---------------------------------\n")
+        """更新分析预览窗口的内容。"""
+        if not self.analysis_preview_window.isVisible() or self.controller.get_current_image() is None:
+            return
+
+        # 1. 原始图像
+        original_result = self.controller.get_analysis_result(AnalysisStage.ORIGINAL)
+        if original_result:
+            self.analysis_preview_window.update_stage(
+                AnalysisStage.ORIGINAL,
+                original_result.get('image'),
+                {
+                    'Path': original_result.get('path', 'N/A'),
+                    'DPI': str(original_result.get('dpi', 'N/A'))
+                }
+            )
+
+        # 2. 灰度图像
+        grayscale_result = self.controller.get_analysis_result(AnalysisStage.GRAYSCALE)
+        if grayscale_result:
+            self.analysis_preview_window.update_stage(
+                AnalysisStage.GRAYSCALE,
+                grayscale_result.get('image'),
+                {'Method': grayscale_result.get('method', 'standard')}
+            )
+
+        # 3. 阈值分割
+        threshold_result = self.controller.apply_threshold_segmentation()
+        if threshold_result:
+            self.analysis_preview_window.update_stage(
+                AnalysisStage.THRESHOLD,
+                threshold_result.get('binary'),
+                {
+                    'Method': threshold_result.get('method', 'N/A'),
+                    'Threshold': threshold_result.get('threshold', 'N/A'),
+                    'Params': str(threshold_result.get('params', {}))
+                }
+            )
+        
+        # 4. 形态学处理
+        morphology_result = self.controller.apply_morphological_processing()
+        if morphology_result:
+            self.analysis_preview_window.update_stage(
+                AnalysisStage.MORPHOLOGY,
+                morphology_result.get('image'),
+                {
+                    'Kernel Shape': morphology_result.get('kernel_shape', 'N/A'),
+                    'Kernel Size': str(morphology_result.get('kernel_size', 'N/A')),
+                    'Iterations': morphology_result.get('iterations', 'N/A')
+                }
+            )
 
     def _show_about(self):
         """显示关于对话框。"""

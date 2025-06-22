@@ -24,6 +24,11 @@ class Controller:
         self.adaptive_params = {'block_size': 11, 'c': 2}
         self.analysis_results = {}
         self.current_analysis_stage = None
+        self.morphology_params = {
+            'kernel_shape': 'rect',
+            'kernel_size': 5,
+            'iterations': 1
+        }
     
     def load_image_from_file(self, file_path):
         """从文件加载图像。
@@ -49,6 +54,11 @@ class Controller:
             self.threshold_method = 'global'
             self.threshold_value = 128
             self.adaptive_params = {'block_size': 11, 'c': 2}
+            self.morphology_params = {
+                'kernel_shape': 'rect',
+                'kernel_size': 5,
+                'iterations': 1
+            }
             
             # 清除之前的分析结果
             self.clear_analysis_results()
@@ -103,6 +113,10 @@ class Controller:
         """设置自适应阈值参数。"""
         self.adaptive_params = params
 
+    def set_morphology_params(self, params: dict):
+        """设置形态学参数。"""
+        self.morphology_params.update(params)
+
     def apply_threshold_segmentation(self):
         """应用阈值分割并保存结果。"""
         if self.current_image is None:
@@ -138,6 +152,33 @@ class Controller:
         
         # 保存计算结果
         self.save_analysis_result(AnalysisStage.THRESHOLD, result)
+        return result
+    
+    def apply_morphological_processing(self):
+        """应用形态学处理并保存结果。"""
+        threshold_result = self.get_analysis_result(AnalysisStage.THRESHOLD)
+        if not threshold_result or 'binary' not in threshold_result:
+            # 如果没有阈值分割结果，则先执行
+            threshold_result = self.apply_threshold_segmentation()
+            if not threshold_result:
+                return None
+
+        binary_image = threshold_result['binary']
+        
+        # 获取参数
+        params = self.morphology_params
+        kernel_size_val = params.get('kernel_size', 5)
+
+        # 应用处理
+        result = self.image_processor.apply_morphological_postprocessing(
+            binary_image,
+            kernel_shape=params.get('kernel_shape', 'rect'),
+            kernel_size=(kernel_size_val, kernel_size_val),
+            iterations=params.get('iterations', 1)
+        )
+        
+        # 保存结果
+        self.save_analysis_result(AnalysisStage.MORPHOLOGY, result)
         return result
     
     def save_analysis_result(self, stage, result_data):

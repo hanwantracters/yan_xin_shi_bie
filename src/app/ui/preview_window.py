@@ -93,6 +93,11 @@ class PreviewWindow(QWidget):
         else:
             self.image_label.setText("图像加载失败")
             
+    def clear_image(self):
+        """清除显示的图像，并重置标签文本。"""
+        self.image_label.clear()
+        self.image_label.setText("请加载图像...")
+            
     def display_image(self, image):
         """显示图像，是update_image的别名。
         
