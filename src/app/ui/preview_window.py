@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import QWidget, QLabel, QVBoxLayout
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QImage, QPixmap
 import numpy as np
+import cv2
 
 
 class PreviewWindow(QWidget):
@@ -63,6 +64,10 @@ class PreviewWindow(QWidget):
             # 将numpy数组转换为QImage
             height, width = image.shape[:2]
             
+            # OpenCV图像是BGR格式，需要转换为RGB
+            if len(image.shape) == 3 and image.shape[2] == 3:
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            
             # 根据图像通道数选择合适的QImage格式
             if len(image.shape) == 2:  # 灰度图像
                 qimg = QImage(image.data, width, height, width, QImage.Format_Grayscale8)
@@ -84,4 +89,12 @@ class PreviewWindow(QWidget):
             )
             self.image_label.setPixmap(pixmap)
         else:
-            self.image_label.setText("图像加载失败") 
+            self.image_label.setText("图像加载失败")
+            
+    def display_image(self, image):
+        """显示图像，是update_image的别名。
+        
+        Args:
+            image: 可以是QImage、QPixmap、numpy数组或文件路径
+        """
+        self.update_image(image) 

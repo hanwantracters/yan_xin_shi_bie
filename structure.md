@@ -17,7 +17,8 @@ rock-fracture-analyzer/
 │       │   ├── control_panel.py     # UI层: 控制面板组件
 │       │   ├── result_panel.py      # UI层: 结果面板组件
 │       │   ├── preview_window.py    # UI层: 预览窗口组件
-│       │   └── measurement_dialog.py# UI层: 测量对话框组件
+│       │   ├── measurement_dialog.py# UI层: 测量对话框组件
+│       │   └── style_manager.py     # UI层: 样式表管理器
 │       │
 │       ├── core/
 │       │   ├── __init__.py

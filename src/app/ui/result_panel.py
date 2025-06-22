@@ -6,7 +6,7 @@
 
 from PyQt5.QtWidgets import QWidget, QTextEdit, QVBoxLayout, QLabel
 from PyQt5.QtCore import Qt
-from typing import Dict, Any
+from typing import Dict, Any, Optional, Tuple
 
 
 class ResultPanel(QWidget):
@@ -32,6 +32,7 @@ class ResultPanel(QWidget):
         # 创建标题标签
         title_label = QLabel("分析结果")
         title_label.setAlignment(Qt.AlignCenter)
+        title_label.setProperty("title", "true")  # 添加属性以便样式表识别
         
         # 创建文本编辑器
         self.result_text = QTextEdit()
@@ -84,4 +85,34 @@ class ResultPanel(QWidget):
                 result_str += f"{key}: {value}\n"
         
         # 更新文本
-        self.result_text.setText(result_str) 
+        self.result_text.setText(result_str)
+        
+    def update_dpi_info(self, dpi: Optional[Tuple[float, float]]) -> None:
+        """更新图像DPI信息。
+        
+        Args:
+            dpi: 图像的DPI信息，格式为(x_dpi, y_dpi)，如果为None则显示未知DPI
+        """
+        # 获取当前文本
+        current_text = self.result_text.toPlainText()
+        
+        # 如果当前文本是默认提示，则清空
+        if current_text == "请加载图像并开始分析...":
+            current_text = ""
+            
+        # 构建DPI信息文本
+        if dpi is None:
+            dpi_text = "图像DPI: 未知"
+        else:
+            x_dpi, y_dpi = dpi
+            if x_dpi == y_dpi:
+                dpi_text = f"图像DPI: {x_dpi}"
+            else:
+                dpi_text = f"图像DPI: X={x_dpi}, Y={y_dpi}"
+                
+        # 如果当前文本为空，直接设置DPI信息
+        if not current_text:
+            self.result_text.setText(dpi_text)
+        else:
+            # 否则，在当前文本前面添加DPI信息
+            self.result_text.setText(f"{dpi_text}\n\n{current_text}") 

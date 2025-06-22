@@ -22,6 +22,10 @@ from .control_panel import ControlPanel
 from .result_panel import ResultPanel
 from .preview_window import PreviewWindow
 from .measurement_dialog import MeasurementDialog
+from .style_manager import style_manager  # 导入样式管理器
+
+# 导入控制器
+from ..core.controller import Controller
 
 
 class MainWindow(QMainWindow):
@@ -34,11 +38,14 @@ class MainWindow(QMainWindow):
         control_panel: 控制面板实例
         result_panel: 结果面板实例
         preview_window: 预览窗口实例
+        controller: 应用程序控制器实例
     """
     
     def __init__(self):
         """初始化主窗口。"""
         super().__init__()
+        # 创建控制器
+        self.controller = Controller()
         self._init_ui()
         
     def _init_ui(self):
@@ -91,6 +98,9 @@ class MainWindow(QMainWindow):
         # 连接信号
         self._connect_signals()
         
+        # 应用样式到整个应用程序
+        style_manager.apply_style_to_application()
+        
     def _create_menu_bar(self):
         """创建菜单栏。"""
         # 创建文件菜单
@@ -99,7 +109,7 @@ class MainWindow(QMainWindow):
         # 添加打开图像动作
         open_action = QAction("打开图像", self)
         open_action.setShortcut("Ctrl+O")
-        open_action.triggered.connect(self._on_open_image)
+        open_action.triggered.connect(self._on_menu_open_image)
         file_menu.addAction(open_action)
         
         # 添加保存结果动作
@@ -128,15 +138,51 @@ class MainWindow(QMainWindow):
     def _connect_signals(self):
         """连接组件信号。"""
         # 连接控制面板信号
-        self.control_panel.loadImageClicked.connect(self._on_open_image)
+        self.control_panel.loadImageClicked.connect(self._on_load_image)
         self.control_panel.startAnalysisClicked.connect(self._on_start_analysis)
         self.control_panel.measureToolClicked.connect(self._on_measure_tool)
         self.control_panel.thresholdChanged.connect(self._on_threshold_changed)
         
-    def _on_open_image(self):
-        """打开图像处理函数。"""
-        # 这里只是UI演示，实际功能需要与控制器连接
-        self.statusBar().showMessage("打开图像...")
+    def _on_menu_open_image(self):
+        """菜单栏打开图像处理函数。"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "选择图像文件",
+            "",
+            "图像文件 (*.jpg *.jpeg *.png *.bmp);;所有文件 (*)"
+        )
+        
+        if file_path:
+            self._on_load_image(file_path)
+        
+    def _on_load_image(self, file_path):
+        """加载图像处理函数。
+        
+        Args:
+            file_path (str): 图像文件的路径。
+        """
+        self.statusBar().showMessage(f"正在加载图像: {file_path}...")
+        
+        # 使用控制器加载图像
+        success, message = self.controller.load_image_from_file(file_path)
+        
+        if success:
+            # 获取加载的图像和DPI信息
+            image = self.controller.get_current_image()
+            dpi = self.controller.get_current_dpi()
+            
+            # 在预览窗口显示图像
+            self.preview_window.display_image(image)
+            
+            # 更新状态栏
+            self.statusBar().showMessage(message)
+            
+            # 更新结果面板显示DPI信息
+            self.result_panel.update_dpi_info(dpi)
+        else:
+            # 显示错误消息
+            QMessageBox.warning(self, "加载错误", message)
+            self.statusBar().showMessage("加载图像失败")
         
     def _on_save_results(self):
         """保存结果处理函数。"""

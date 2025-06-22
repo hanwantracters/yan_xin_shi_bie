@@ -55,7 +55,7 @@ class MeasurementDialog(QDialog):
         # 添加标题行
         title_label = QLabel("裂缝测量结果")
         title_label.setAlignment(Qt.AlignCenter)
-        title_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        title_label.setProperty("title", "true")  # 添加属性以便样式表识别
         grid_layout.addWidget(title_label, 0, 0, 1, 2)
         
         # 添加分隔线
@@ -75,7 +75,7 @@ class MeasurementDialog(QDialog):
         grid_layout.addWidget(QLabel(f"{self.physical_len:.2f} 毫米"), 4, 1)
         
         # 添加计算公式说明
-        formula_label = QLabel("计算公式: 物理长度 = 像素长度 / DPI * 25.4")
+        formula_label = QLabel("单位换算: 使用UnitConverter将像素转换为物理单位(毫米)")
         formula_label.setStyleSheet("color: #666; font-style: italic;")
         grid_layout.addWidget(formula_label, 5, 0, 1, 2)
         

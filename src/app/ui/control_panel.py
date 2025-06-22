@@ -4,7 +4,7 @@
 开始分析和调整处理参数。遵循 Google 风格的 Docstrings 和类型提示。
 """
 
-from typing import Optional
+from typing import Optional, Tuple
 
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont
@@ -16,6 +16,7 @@ from PyQt5.QtWidgets import (
     QSlider,
     QVBoxLayout,
     QWidget,
+    QFileDialog,
 )
 
 
@@ -26,14 +27,14 @@ class ControlPanel(QWidget):
     通过信号机制与主窗口进行通信。
 
     Attributes:
-        loadImageClicked (pyqtSignal): 加载图像按钮点击时发出。
+        loadImageClicked (pyqtSignal): 加载图像按钮点击时发出，携带文件路径字符串。
         startAnalysisClicked (pyqtSignal): 开始分析按钮点击时发出。
         measureToolClicked (pyqtSignal): 测量工具按钮点击时发出。
         thresholdChanged (pyqtSignal): 阈值滑块值变化时发出，携带整数值。
     """
 
     # 定义信号
-    loadImageClicked = pyqtSignal()
+    loadImageClicked = pyqtSignal(str)  # 修改为传递文件路径
     startAnalysisClicked = pyqtSignal()
     measureToolClicked = pyqtSignal()
     thresholdChanged = pyqtSignal(int)
@@ -61,9 +62,6 @@ class ControlPanel(QWidget):
         self.threshold_slider.setValue(128)  # 默认值
         self.threshold_value_label = QLabel(str(self.threshold_slider.value()))
 
-        # 调整字体大小
-        self._adjust_font_sizes()
-
         # 设置阈值控件布局
         threshold_layout = QHBoxLayout()
         threshold_layout.addWidget(self.threshold_label)
@@ -83,31 +81,9 @@ class ControlPanel(QWidget):
         # 连接信号
         self._connect_signals()
 
-    def _adjust_font_sizes(self) -> None:
-        """调整指定控件的字体大小，增加50%。"""
-        widgets_to_resize = [
-            self.load_image_btn,
-            self.start_analysis_btn,
-            self.measure_btn,
-            self.threshold_label,
-        ]
-
-        for widget in widgets_to_resize:
-            font = widget.font()
-
-            # 如果pointSize返回-1，则使用QApplication的默认字体大小
-            default_size = font.pointSize()
-            if default_size <= 0:
-                default_size = QApplication.font().pointSize()
-
-            # 计算新大小并设置
-            new_size = int(default_size * 1.5)
-            font.setPointSize(new_size)
-            widget.setFont(font)
-
     def _connect_signals(self) -> None:
         """连接所有内部信号和槽。"""
-        self.load_image_btn.clicked.connect(self.loadImageClicked)
+        self.load_image_btn.clicked.connect(self._on_load_image_clicked)
         self.start_analysis_btn.clicked.connect(self.startAnalysisClicked)
         self.measure_btn.clicked.connect(self.measureToolClicked)
         self.threshold_slider.valueChanged.connect(self._on_threshold_changed)
@@ -121,4 +97,20 @@ class ControlPanel(QWidget):
             value (int): 滑块的新整数值。
         """
         self.threshold_value_label.setText(str(value))
-        self.thresholdChanged.emit(value) 
+        self.thresholdChanged.emit(value)
+        
+    def _on_load_image_clicked(self) -> None:
+        """处理加载图像按钮点击事件。
+        
+        打开文件选择对话框，让用户选择图像文件，然后发出带有文件路径的信号。
+        """
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "选择图像文件",
+            "",
+            "图像文件 (*.jpg *.jpeg *.png *.bmp);;所有文件 (*)"
+        )
+        
+        if file_path:
+            # 如果用户选择了文件，发出信号并携带文件路径
+            self.loadImageClicked.emit(file_path) 
