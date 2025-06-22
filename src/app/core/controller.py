@@ -7,6 +7,7 @@
 
 from .image_processor import ImageProcessor
 from .unit_converter import UnitConverter
+from .analysis_stages import AnalysisStage
 
 class Controller:
     """应用程序控制器类，协调UI和业务逻辑。"""
@@ -18,6 +19,13 @@ class Controller:
         self.current_image = None
         self.current_dpi = None
         self.current_image_path = None
+        self.threshold_method = 'global'
+        self.threshold_value = 128
+        self.adaptive_params = {'block_size': 11, 'c': 2}
+        
+        # 添加分析结果存储
+        self.analysis_results = {}  # 存储各个处理阶段的结果
+        self.current_analysis_stage = None  # 当前分析阶段
     
     def load_image_from_file(self, file_path):
         """从文件加载图像。
@@ -39,6 +47,19 @@ class Controller:
             self.current_image = image
             self.current_dpi = dpi
             self.current_image_path = file_path
+            # 重置阈值参数
+            self.threshold_method = 'global'
+            self.threshold_value = 128
+            self.adaptive_params = {'block_size': 11, 'c': 2}
+            
+            # 清空之前的分析结果
+            self.clear_analysis_results()
+            
+            # 保存原始图像作为第一个分析阶段
+            self.save_analysis_result(AnalysisStage.ORIGINAL, {
+                'image': image,
+                'params': {},
+            })
             
             return True, f"成功加载图像: {file_path}, DPI: {dpi}"
         except FileNotFoundError as e:
@@ -63,6 +84,116 @@ class Controller:
             tuple: 当前图像的DPI信息，如果没有DPI信息则返回None。
         """
         return self.current_dpi
+        
+    def set_threshold_method(self, method: str):
+        """设置阈值方法。"""
+        self.threshold_method = method
+
+    def set_threshold_value(self, value: int):
+        """设置全局阈值。"""
+        self.threshold_value = value
+
+    def set_adaptive_params(self, params: dict):
+        """设置自适应阈值参数。"""
+        self.adaptive_params = params
+
+    def apply_threshold_segmentation(self):
+        """应用阈值分割并保存结果。"""
+        if self.current_image is None:
+            return None
+        
+        # 检查是否已有保存的结果
+        saved_result = self.get_analysis_result(AnalysisStage.THRESHOLD)
+        # 如果已有结果且参数没变,直接返回
+        if saved_result:
+            method = saved_result.get('method')
+            params = saved_result.get('params', {})
+            
+            if method == self.threshold_method:
+                if method == 'global' and params.get('threshold') == self.threshold_value:
+                    return saved_result
+                elif method == 'adaptive_gaussian' and params == self.adaptive_params:
+                    return saved_result
+                elif method == 'otsu':
+                    return saved_result
+            
+        # 否则重新计算
+        params = {}
+        if self.threshold_method == 'global':
+            params['threshold'] = self.threshold_value
+        elif self.threshold_method == 'adaptive_gaussian':
+            params = self.adaptive_params
+        
+        result = self.image_processor.apply_threshold(
+            self.current_image, 
+            method=self.threshold_method, 
+            params=params
+        )
+        
+        # 保存计算结果
+        self.save_analysis_result(AnalysisStage.THRESHOLD, result)
+        return result
+    
+    def save_analysis_result(self, stage, result_data):
+        """保存分析阶段的结果。
+        
+        Args:
+            stage (AnalysisStage): 分析阶段
+            result_data (dict): 包含结果数据和元数据的字典
+        """
+        self.analysis_results[stage] = result_data
+        self.current_analysis_stage = stage
+
+    def get_analysis_result(self, stage):
+        """获取指定分析阶段的结果。
+        
+        Args:
+            stage (AnalysisStage): 要获取的分析阶段
+            
+        Returns:
+            dict: 该阶段的结果数据,如果不存在则返回None
+        """
+        return self.analysis_results.get(stage)
+
+    def clear_analysis_results(self):
+        """清除所有分析结果。"""
+        self.analysis_results.clear()
+        self.current_analysis_stage = None
+        
+    def start_analysis(self):
+        """执行完整的图像分析流程。
+        
+        Returns:
+            tuple: (success, message) 表示操作的成功状态和相关消息
+        """
+        if self.current_image is None:
+            return False, "没有加载图像,无法开始分析"
+            
+        # 清空之前的分析结果
+        self.clear_analysis_results()
+        
+        # 保存原始图像
+        self.save_analysis_result(AnalysisStage.ORIGINAL, {
+            'image': self.current_image,
+            'params': {},
+            'stage_name': AnalysisStage.get_stage_name(AnalysisStage.ORIGINAL)
+        })
+        
+        # 1. 灰度化与去噪
+        processed_image = self.image_processor.process_image(self.current_image)
+        self.save_analysis_result(AnalysisStage.GRAYSCALE, {
+            'image': processed_image,
+            'params': {'kernel_size': self.image_processor.DEFAULT_GAUSSIAN_KERNEL},
+            'stage_name': AnalysisStage.get_stage_name(AnalysisStage.GRAYSCALE)
+        })
+        
+        # 2. 阈值分割 - 使用当前设置的阈值参数
+        threshold_result = self.apply_threshold_segmentation()
+        # 结果已在apply_threshold_segmentation中保存
+        
+        # 注意: 以下步骤尚未实现,未来会添加形态学处理和裂缝检测功能
+        
+        return True, "分析完成"
         
     def convert_pixels_to_mm(self, pixels):
         """将像素值转换为毫米值。

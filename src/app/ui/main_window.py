@@ -21,6 +21,7 @@ from PyQt5.QtGui import QIcon
 from .control_panel import ControlPanel
 from .result_panel import ResultPanel
 from .preview_window import PreviewWindow
+from .threshold_preview_window import ThresholdPreviewWindow
 from .measurement_dialog import MeasurementDialog
 from .style_manager import style_manager  # 导入样式管理器
 
@@ -38,6 +39,7 @@ class MainWindow(QMainWindow):
         control_panel: 控制面板实例
         result_panel: 结果面板实例
         preview_window: 预览窗口实例
+        threshold_preview_window: 阈值预览窗口实例
         controller: 应用程序控制器实例
     """
     
@@ -73,6 +75,10 @@ class MainWindow(QMainWindow):
         # 创建预览窗口
         self.preview_window = PreviewWindow()
         h_splitter.addWidget(self.preview_window)
+        
+        # 创建阈值预览窗口
+        self.threshold_preview_window = ThresholdPreviewWindow()
+        self.threshold_preview_window.hide() # 默认隐藏
         
         # 创建垂直分割器
         v_splitter = QSplitter(Qt.Vertical)
@@ -127,6 +133,16 @@ class MainWindow(QMainWindow):
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
         
+        # 创建视图菜单
+        view_menu = self.menuBar().addMenu("视图")
+        
+        # 添加显示阈值预览窗口选项
+        show_threshold_preview_action = QAction("显示阈值预览窗口", self)
+        show_threshold_preview_action.setCheckable(True)
+        show_threshold_preview_action.setChecked(False)
+        show_threshold_preview_action.triggered.connect(self._toggle_threshold_preview)
+        view_menu.addAction(show_threshold_preview_action)
+        
         # 创建帮助菜单
         help_menu = self.menuBar().addMenu("帮助")
         
@@ -142,6 +158,8 @@ class MainWindow(QMainWindow):
         self.control_panel.startAnalysisClicked.connect(self._on_start_analysis)
         self.control_panel.measureToolClicked.connect(self._on_measure_tool)
         self.control_panel.thresholdChanged.connect(self._on_threshold_changed)
+        self.control_panel.thresholdMethodChanged.connect(self._on_threshold_method_changed)
+        self.control_panel.adaptiveParamsChanged.connect(self._on_adaptive_params_changed)
         
     def _on_menu_open_image(self):
         """菜单栏打开图像处理函数。"""
@@ -191,8 +209,24 @@ class MainWindow(QMainWindow):
         
     def _on_start_analysis(self):
         """开始分析处理函数。"""
-        # 这里只是UI演示，实际功能需要与控制器连接
         self.statusBar().showMessage("开始分析...")
+        
+        # 调用控制器执行完整分析流程
+        success, message = self.controller.start_analysis()
+        
+        if success:
+            # 更新阈值预览窗口(如果可见)
+            self._update_threshold_preview()
+            
+            # 获取分析结果并更新结果面板
+            # 这里可以从controller.analysis_results获取分析结果
+            # 未来可能需要根据实际分析结果扩展此处代码
+            
+            self.statusBar().showMessage("分析完成")
+        else:
+            # 显示错误消息
+            QMessageBox.warning(self, "分析错误", message)
+            self.statusBar().showMessage("分析失败")
         
     def _on_measure_tool(self):
         """测量工具处理函数。"""
@@ -202,9 +236,48 @@ class MainWindow(QMainWindow):
         
     def _on_threshold_changed(self, value):
         """阈值变化处理函数。"""
-        # 这里只是UI演示，实际功能需要与控制器连接
-        self.statusBar().showMessage(f"阈值已调整为: {value}")
+        self.controller.set_threshold_value(value)
+        self._update_threshold_preview()
         
+    def _on_threshold_method_changed(self, method):
+        """阈值方法变化处理函数。"""
+        self.controller.set_threshold_method(method)
+        self._update_threshold_preview()
+
+    def _on_adaptive_params_changed(self, params):
+        """自适应阈值参数变化处理函数。"""
+        self.controller.set_adaptive_params(params)
+        self._update_threshold_preview()
+
+    def _toggle_threshold_preview(self, checked):
+        """切换阈值预览窗口的显示和隐藏。"""
+        if checked:
+            self.threshold_preview_window.show()
+            self._update_threshold_preview() # 打开时立即更新一次
+        else:
+            self.threshold_preview_window.hide()
+
+    def _update_threshold_preview(self):
+        """更新阈值预览窗口。"""
+        if self.threshold_preview_window.isVisible() and self.controller.get_current_image() is not None:
+            result = self.controller.apply_threshold_segmentation()
+            
+            if result:
+                binary_image = result.get('binary')
+                method = result.get('method')
+                threshold = result.get('threshold')
+                params = result.get('params')
+                
+                info_text = f"方法: {method}"
+                if method == 'global':
+                    info_text += f" | 阈值: {threshold}"
+                elif method == 'adaptive_gaussian':
+                    info_text += f" | Block: {params.get('block_size', 'N/A')}, C: {params.get('c', 'N/A')}"
+                elif method == 'otsu':
+                    info_text += f" | 计算阈值: {threshold}"
+
+                self.threshold_preview_window.update_preview(binary_image, info_text)
+
     def _show_about(self):
         """显示关于对话框。"""
         QMessageBox.about(
