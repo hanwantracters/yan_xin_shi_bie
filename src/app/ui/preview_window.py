@@ -9,6 +9,8 @@ from PyQt5.QtGui import QImage, QPixmap
 import numpy as np
 import cv2
 
+from ..core.analysis_stages import AnalysisStage
+
 
 class PreviewWindow(QWidget):
     """预览窗口类，用于显示图像。
@@ -98,3 +100,21 @@ class PreviewWindow(QWidget):
             image: 可以是QImage、QPixmap、numpy数组或文件路径
         """
         self.update_image(image) 
+
+    def update_preview(self, analysis_results):
+        """更新预览窗口以显示分析结果。
+        
+        Args:
+            analysis_results: 分析结果字典
+        """
+        print("接收到的分析结果阶段:", [stage.name for stage in analysis_results.keys()])
+        for stage in analysis_results:
+            print(f"阶段{stage.name}结果包含字段:", list(analysis_results[stage].keys()))
+        
+        # 获取阈值分割结果并显示
+        threshold_result = analysis_results.get(AnalysisStage.THRESHOLD)
+        if threshold_result and 'binary' in threshold_result:
+            # 显示二值图像
+            self.update_image(threshold_result['binary'])
+        else:
+            self.image_label.setText("无有效的阈值分割结果") 

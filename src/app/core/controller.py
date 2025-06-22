@@ -22,10 +22,8 @@ class Controller:
         self.threshold_method = 'global'
         self.threshold_value = 128
         self.adaptive_params = {'block_size': 11, 'c': 2}
-        
-        # 添加分析结果存储
-        self.analysis_results = {}  # 存储各个处理阶段的结果
-        self.current_analysis_stage = None  # 当前分析阶段
+        self.analysis_results = {}
+        self.current_analysis_stage = None
     
     def load_image_from_file(self, file_path):
         """从文件加载图像。
@@ -52,13 +50,21 @@ class Controller:
             self.threshold_value = 128
             self.adaptive_params = {'block_size': 11, 'c': 2}
             
-            # 清空之前的分析结果
+            # 清除之前的分析结果
             self.clear_analysis_results()
             
-            # 保存原始图像作为第一个分析阶段
+            # 保存原始图像结果
             self.save_analysis_result(AnalysisStage.ORIGINAL, {
                 'image': image,
-                'params': {},
+                'path': file_path,
+                'dpi': dpi
+            })
+            
+            # 生成灰度图并保存
+            gray_image = self.image_processor.convert_to_grayscale(image)
+            self.save_analysis_result(AnalysisStage.GRAYSCALE, {
+                'image': gray_image,
+                'method': 'standard'
             })
             
             return True, f"成功加载图像: {file_path}, DPI: {dpi}"
@@ -143,57 +149,6 @@ class Controller:
         """
         self.analysis_results[stage] = result_data
         self.current_analysis_stage = stage
-
-    def get_analysis_result(self, stage):
-        """获取指定分析阶段的结果。
-        
-        Args:
-            stage (AnalysisStage): 要获取的分析阶段
-            
-        Returns:
-            dict: 该阶段的结果数据,如果不存在则返回None
-        """
-        return self.analysis_results.get(stage)
-
-    def clear_analysis_results(self):
-        """清除所有分析结果。"""
-        self.analysis_results.clear()
-        self.current_analysis_stage = None
-        
-    def start_analysis(self):
-        """执行完整的图像分析流程。
-        
-        Returns:
-            tuple: (success, message) 表示操作的成功状态和相关消息
-        """
-        if self.current_image is None:
-            return False, "没有加载图像,无法开始分析"
-            
-        # 清空之前的分析结果
-        self.clear_analysis_results()
-        
-        # 保存原始图像
-        self.save_analysis_result(AnalysisStage.ORIGINAL, {
-            'image': self.current_image,
-            'params': {},
-            'stage_name': AnalysisStage.get_stage_name(AnalysisStage.ORIGINAL)
-        })
-        
-        # 1. 灰度化与去噪
-        processed_image = self.image_processor.process_image(self.current_image)
-        self.save_analysis_result(AnalysisStage.GRAYSCALE, {
-            'image': processed_image,
-            'params': {'kernel_size': self.image_processor.DEFAULT_GAUSSIAN_KERNEL},
-            'stage_name': AnalysisStage.get_stage_name(AnalysisStage.GRAYSCALE)
-        })
-        
-        # 2. 阈值分割 - 使用当前设置的阈值参数
-        threshold_result = self.apply_threshold_segmentation()
-        # 结果已在apply_threshold_segmentation中保存
-        
-        # 注意: 以下步骤尚未实现,未来会添加形态学处理和裂缝检测功能
-        
-        return True, "分析完成"
         
     def convert_pixels_to_mm(self, pixels):
         """将像素值转换为毫米值。
@@ -288,4 +243,28 @@ class Controller:
         
         # 使用x轴DPI进行转换（通常x和y的DPI是相同的）
         dpi_value = self.current_dpi[0]
-        return self.unit_converter.convert_area(pixel_area, dpi_value) 
+        return self.unit_converter.convert_area(pixel_area, dpi_value)
+    
+    def get_analysis_result(self, stage):
+        """获取特定阶段的分析结果。
+        
+        Args:
+            stage (AnalysisStage): 分析阶段
+            
+        Returns:
+            dict: 该阶段的分析结果字典，如果没有结果则返回None
+        """
+        return self.analysis_results.get(stage)
+    
+    def get_all_analysis_results(self):
+        """获取所有分析阶段的结果。
+        
+        Returns:
+            dict: 包含所有分析阶段结果的字典
+        """
+        return self.analysis_results
+        
+    def clear_analysis_results(self):
+        """清除所有分析结果。"""
+        self.analysis_results.clear()
+        self.current_analysis_stage = None 

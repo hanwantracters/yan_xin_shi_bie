@@ -12,6 +12,7 @@
 - **手动测量工具**：支持在图像上通过鼠标绘制直线进行手动测量
 - **结果可视化**：将识别的裂缝区域以醒目颜色叠加显示在原图上
 - **单位换算**：基于图像DPI信息，自动将像素单位转换为物理单位(mm)
+- **多阶段分析预览**：提供分析预览窗口，可查看各个处理阶段（原图、灰度图、阈值分割等）的结果
 
 ## 技术架构
 
@@ -29,16 +30,19 @@ graph TD
     subgraph UI_Layer_用户界面层
         Controls[UI_Controls_界面控件]
         Display[Image_Display_图像与结果显示]
+        Preview[Multi_Stage_Preview_多阶段预览]
     end
 
     subgraph Business_Logic_Layer_业务逻辑层
         Controller[Process_Controller_流程控制器]
         Converter[Unit_Converter_单位换算引擎]
+        AnalysisStages[Analysis_Stages_分析阶段定义]
     end
 
     subgraph Data_Processing_Layer_数据处理层
         IO[Image_IO_图像读写模块]
         CV[OpenCV_Functions_图像处理函数]
+        Results[Analysis_Results_分析结果存储]
     end
 
     %% 详细交互流程
@@ -49,7 +53,10 @@ graph TD
     CV -- "5.返回像素结果" --> Controller
     Controller -- "6.调用换算" --> Converter
     Converter -- "7.返回物理尺寸" --> Controller
-    Controller -- "8.更新界面" --> Display
+    Controller -- "8.保存结果" --> Results
+    Results -- "9.提供结果" --> Controller
+    Controller -- "10.更新界面" --> Display
+    Controller -- "11.更新预览" --> Preview
 ```
 
 **技术栈**：
@@ -57,4 +64,15 @@ graph TD
 - GUI框架: PyQt5
 - 核心图像处理库: OpenCV-Python
 - 数值计算库: NumPy
+
+## 分析阶段
+
+软件定义了以下分析处理阶段:
+
+1. **原始图像 (ORIGINAL)**: 加载的原始岩心图像
+2. **灰度处理 (GRAYSCALE)**: 转换为灰度图的处理结果
+3. **阈值分割 (THRESHOLD)**: 二值化后的黑白图像
+4. **形态学处理 (MORPHOLOGY)**: 应用开闭运算后的形态学处理结果
+5. **裂缝检测 (DETECTION)**: 检测到的裂缝轮廓
+6. **测量结果 (MEASUREMENT)**: 最终的测量数据和标注结果
 

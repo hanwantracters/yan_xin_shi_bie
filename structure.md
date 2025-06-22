@@ -17,13 +17,16 @@ rock-fracture-analyzer/
 │       │   ├── control_panel.py     # UI层: 控制面板组件
 │       │   ├── result_panel.py      # UI层: 结果面板组件
 │       │   ├── preview_window.py    # UI层: 预览窗口组件
+│       │   ├── analysis_preview_window.py # UI层: 分析预览窗口组件
 │       │   ├── measurement_dialog.py# UI层: 测量对话框组件
 │       │   └── style_manager.py     # UI层: 样式表管理器
 │       │
 │       ├── core/
 │       │   ├── __init__.py
 │       │   ├── controller.py        # 业务逻辑层: 流程控制器
-│       │   └── image_processor.py   # 数据处理层: 图像处理函数
+│       │   ├── image_processor.py   # 数据处理层: 图像处理函数
+│       │   ├── analysis_stages.py   # 数据模型: 分析阶段枚举定义
+│       │   └── unit_converter.py    # 工具: 像素和物理单位转换器
 │       │
 │       └── utils/
 │           ├── __init__.py
