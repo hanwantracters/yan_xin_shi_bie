@@ -26,7 +26,6 @@ from .preview_window import PreviewWindow
 from .analysis_preview_window import AnalysisPreviewWindow
 from .measurement_dialog import MeasurementDialog
 from .style_manager import style_manager  # 导入样式管理器
-from .analysis_wizard import AnalysisWizard
 
 # 导入控制器和枚举
 from ..core.controller import Controller
@@ -88,7 +87,7 @@ class MainWindow(QMainWindow):
         v_splitter = QSplitter(Qt.Vertical)
         
         # 创建控制面板
-        self.control_panel = ControlPanel()
+        self.control_panel = ControlPanel(self.controller, self)
         v_splitter.addWidget(self.control_panel)
         
         # 创建结果面板
@@ -161,12 +160,9 @@ class MainWindow(QMainWindow):
         self.control_panel.loadImageClicked.connect(self._on_load_image)
         self.control_panel.startAnalysisClicked.connect(self._on_start_analysis)
         self.control_panel.measureToolClicked.connect(self._on_measure_tool)
+        self.control_panel.import_parameters_requested.connect(self._handle_import_parameters)
+        self.control_panel.export_parameters_requested.connect(self._handle_export_parameters)
         
-        # 新的直接连接
-        self.control_panel.thresholdParamsChanged.connect(self.controller.on_threshold_params_changed)
-        self.control_panel.morphologyParamsChanged.connect(self.controller.on_morphology_params_changed)
-        self.control_panel.mergeFracturesToggled.connect(self.controller.on_merge_fractures_toggled)
-
         # 连接控制器信号
         self.controller.analysis_complete.connect(self._on_analysis_complete)
         self.controller.preview_stage_updated.connect(self._on_preview_stage_updated)
@@ -224,32 +220,40 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("保存结果...")
         
     def _on_start_analysis(self):
-        """开始分析处理函数，启动分析向导。"""
+        """开始分析处理函数，直接使用控制器中的参数执行。"""
         if self.controller.get_current_image() is None:
             QMessageBox.warning(self, "操作无效", "请先加载一张图像再开始分析。")
             return
 
-        wizard = AnalysisWizard(self)
-        if wizard.exec_() == QDialog.Accepted:
-            params = wizard.get_parameters()
-            merge_params = {
-                'max_distance': 15, # 可在未来UI中设置
-                'max_angle_diff': 20 # 可在未来UI中设置
-            }
-            self.statusBar().showMessage("正在执行裂缝分析...")
-            QApplication.setOverrideCursor(Qt.WaitCursor)
-            
-            self.controller.run_fracture_analysis(
-                min_aspect_ratio=params['min_aspect_ratio'],
-                min_length=params['min_length'],
-                merge_params=merge_params
-            )
-            
-            QApplication.restoreOverrideCursor()
+        self.statusBar().showMessage("正在执行裂缝分析...")
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        
+        # 直接调用控制器的分析方法，无需传递参数
+        self.controller.run_fracture_analysis()
+        
+        QApplication.restoreOverrideCursor()
+        
+    def _handle_import_parameters(self):
+        """处理导入参数请求。"""
+        filepath, _ = QFileDialog.getOpenFileName(
+            self, "导入参数文件", "", "JSON Files (*.json)"
+        )
+        if filepath:
+            self.controller.load_parameters(filepath)
+            self.statusBar().showMessage(f"已从 {filepath} 加载参数。")
+
+    def _handle_export_parameters(self):
+        """处理导出参数请求。"""
+        filepath, _ = QFileDialog.getSaveFileName(
+            self, "导出参数文件", "analysis_params.json", "JSON Files (*.json)"
+        )
+        if filepath:
+            self.controller.save_parameters(filepath)
+            self.statusBar().showMessage(f"参数已保存至 {filepath}。")
 
     def _on_analysis_complete(self, results: dict):
-        """分析完成后的处理函数。"""
-        self.statusBar().showMessage("裂缝分析完成。", 5000)
+        """分析完成处理函数。"""
+        self.statusBar().showMessage("分析完成。", 5000)
         
         # 更新结果面板
         measurement_result = results.get(AnalysisStage.MEASUREMENT)

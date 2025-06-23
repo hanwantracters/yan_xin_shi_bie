@@ -203,7 +203,7 @@ class ImageProcessor:
             image: 输入的灰度图像
             method: 阈值方法，可选值: 'global', 'adaptive_gaussian', 'otsu', 'niblack', 'sauvola'
             params: 方法参数字典，根据不同方法需要不同的参数
-                - global: {'threshold': 阈值(0-255)}
+                - global: {'value': 阈值(0-255)}
                 - adaptive_gaussian: {'block_size': 块大小, 'c': 常数}
                 - otsu: 不需要参数
                 - niblack: {'window_size': 窗口大小, 'k': k值}
@@ -229,7 +229,7 @@ class ImageProcessor:
         processed_image = self.process_image(image)
         
         if method == 'global':
-            threshold = params.get('threshold', 128)
+            threshold = params.get('value', 128)
             result['binary'] = self.apply_global_threshold(processed_image, threshold)
             result['threshold'] = threshold
             
@@ -246,23 +246,20 @@ class ImageProcessor:
         elif method == 'niblack':
             window_size = params.get('window_size', 25)
             k = params.get('k', 0.2)
-            # 确保 window_size 是奇数
-            if window_size % 2 == 0:
-                window_size += 1
-            thresh_niblack = threshold_niblack(processed_image, window_size=window_size, k=k)
-            binary = (processed_image > thresh_niblack).astype(np.uint8) * 255
-            result['binary'] = binary
+            if window_size % 2 == 0: window_size += 1
+            thresh_val = threshold_niblack(processed_image, window_size=window_size, k=k)
+            result['binary'] = (processed_image > thresh_val).astype(np.uint8) * 255
 
         elif method == 'sauvola':
             window_size = params.get('window_size', 25)
             k = params.get('k', 0.2)
             r = params.get('r', 128)
-            # 确保 window_size 是奇数
-            if window_size % 2 == 0:
-                window_size += 1
-            thresh_sauvola = threshold_sauvola(processed_image, window_size=window_size, k=k, r=r)
-            binary = (processed_image > thresh_sauvola).astype(np.uint8) * 255
-            result['binary'] = binary
+            if window_size % 2 == 0: window_size += 1
+            thresh_val = threshold_sauvola(processed_image, window_size=window_size, k=k, r=r)
+            result['binary'] = (processed_image > thresh_val).astype(np.uint8) * 255
+        
+        else:
+            raise ValueError(f"未知的阈值方法: {method}")
         
         print("阈值分割结果:", result);
         return result 
@@ -337,47 +334,33 @@ class ImageProcessor:
 
         processed_image = binary_image.copy()
 
-        # 1. 去噪 (开运算) 阶段
-        if opening_strategy == 'standard':
-            op_params = params.get('standard_opening', {})
-            kernel_shape = op_params.get('kernel_shape', 'rect')
-            kernel_size = op_params.get('kernel_size', (3, 3))
-            iterations = op_params.get('iterations', 1)
-            kernel = self.create_morphology_kernel(kernel_shape, kernel_size)
-            processed_image = cv2.bitwise_not(processed_image)
-            processed_image = cv2.morphologyEx(processed_image, cv2.MORPH_OPEN, kernel, iterations=iterations)
-            processed_image = cv2.bitwise_not(processed_image)
-        
-        elif opening_strategy == 'area_based':
-            area_params = params.get('area_based_opening', {})
-            min_area = area_params.get('min_area', 25)
-            # 注意：我们的裂缝是黑色的，噪点是白色的。所以需要先反转图像，去除白色噪点，再反转回来。
-            inverted_image = cv2.bitwise_not(processed_image)
-            denoised_inverted = self._remove_small_noise_by_area(inverted_image, min_area)
-            processed_image = cv2.bitwise_not(denoised_inverted)
+        # Step 1: Opening
+        if opening_ksize > 0:
+            kernel = self.create_morphology_kernel(opening_kshape, (opening_ksize, opening_ksize))
+            if opening_strategy == 'standard':
+                iterations = params.get('opening_iterations', 1)
+                # [FIX] 反转图像，使裂缝（前景）为白色，背景为黑色
+                inverted_image = cv2.bitwise_not(processed_image)
+                # 对白色前景执行开运算以移除噪点
+                opened_inverted = cv2.morphologyEx(inverted_image, cv2.MORPH_OPEN, kernel, iterations=iterations)
+                # [FIX] 将图像反转回来
+                processed_image = cv2.bitwise_not(opened_inverted)
+            elif opening_strategy == 'area_based':
+                min_area = params.get('min_area', 100)
+                # 反转图像，使噪声成为白色前景
+                processed_image = cv2.bitwise_not(self._remove_small_noise_by_area(processed_image, min_area))
 
-        # 2. 连接 (闭运算) 阶段
-        if closing_strategy == 'standard':
-            cl_params = params.get('standard_closing', {})
-            kernel_shape = cl_params.get('kernel_shape', 'rect')
-            kernel_size = cl_params.get('kernel_size', (3, 3))
-            iterations = cl_params.get('iterations', 1)
-            kernel = self.create_morphology_kernel(kernel_shape, kernel_size)
-            processed_image = cv2.bitwise_not(processed_image)
-            processed_image = cv2.morphologyEx(processed_image, cv2.MORPH_CLOSE, kernel, iterations=iterations)
-            processed_image = cv2.bitwise_not(processed_image)
-        
-        elif closing_strategy == 'strong':
-            # "强力"闭运算可以被实现为使用更大的核或更多的迭代次数
-            cl_params = params.get('strong_closing', {})
-            kernel_shape = cl_params.get('kernel_shape', 'rect')
-            kernel_size = cl_params.get('kernel_size', (7, 7)) # 使用更大的核
-            iterations = cl_params.get('iterations', 2) # 使用更多次迭代
-            kernel = self.create_morphology_kernel(kernel_shape, kernel_size)
-            processed_image = cv2.bitwise_not(processed_image)
-            processed_image = cv2.morphologyEx(processed_image, cv2.MORPH_CLOSE, kernel, iterations=iterations)
-            processed_image = cv2.bitwise_not(processed_image)
-        
+        # Step 2: Closing
+        if closing_ksize > 0:
+            kernel = self.create_morphology_kernel(closing_kshape, (closing_ksize, closing_ksize))
+            iterations = params.get('closing_iterations', 1)
+            # [FIX] 反转图像，使裂缝（前景）为白色
+            inverted_image = cv2.bitwise_not(processed_image)
+            # 对白色前景执行闭运算以连接裂缝
+            closed_inverted = cv2.morphologyEx(inverted_image, cv2.MORPH_CLOSE, kernel, iterations=iterations)
+            # [FIX] 将图像反转回来
+            processed_image = cv2.bitwise_not(closed_inverted)
+
         result = {
             'image': processed_image,
             'opening_strategy': opening_strategy,

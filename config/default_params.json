@@ -1,0 +1,31 @@
+{
+    "version": "1.0",
+    "analysis_parameters": {
+        "threshold": {
+            "method": "sauvola",
+            "global_value": 127,
+            "adaptive_block_size": 11,
+            "adaptive_c_value": 2,
+            "niblack_window_size": 25,
+            "niblack_k": -0.2,
+            "sauvola_window_size": 17,
+            "sauvola_k": 0.2,
+            "sauvola_r": 128
+        },
+        "morphology": {
+            "open_kernel_size": 1,
+            "open_iterations": 1,
+            "close_kernel_size": 3,
+            "close_iterations": 1
+        },
+        "filtering": {
+            "min_length_mm": 20.0,
+            "min_aspect_ratio": 3.0
+        },
+        "merging": {
+            "enabled": true,
+            "merge_distance_mm": 2.0,
+            "max_angle_diff": 15.0
+        }
+    }
+}

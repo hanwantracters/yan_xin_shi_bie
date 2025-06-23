@@ -19,9 +19,10 @@ rock-fracture-analyzer/
 │       │   ├── result_panel.py      # UI层: 结果面板组件
 │       │   ├── preview_window.py    # UI层: 预览窗口组件
 │       │   ├── analysis_preview_window.py # UI层: 分析预览窗口组件
-│       │   ├── analysis_wizard.py     # UI层: 裂缝分析参数设置向导
-│       │   ├── measurement_dialog.py# UI层: 测量对话框组件
+│       │   ├── threshold_settings_dialog.py # UI层: 二值化参数设置对话框
 │       │   ├── morphology_settings_dialog.py # UI层: 形态学参数设置对话框
+│       │   ├── filtering_settings_dialog.py # UI层: 过滤与合并参数设置对话框
+│       │   ├── measurement_dialog.py# UI层: 测量对话框组件
 │       │   └── style_manager.py     # UI层: 样式表管理器
 │       │
 │       ├── core/                   # 业务与数据层: 包含核心业务逻辑与数据处理 (详见该目录下的README.md)
@@ -37,4 +38,7 @@ rock-fracture-analyzer/
 │
 └── tests/
     ├── __init__.py
-    └── test_image_processor.py     # 测试代码: 对核心算法进行单元测试
+    ├── test_controller.py          # 测试代码: 对控制器逻辑进行单元测试
+    ├── test_image_processor.py     # 测试代码: 对核心图像算法进行单元测试
+    ├── test_unit_converter.py      # 测试代码: 对单位转换器进行单元测试
+    └── test_dialog_opening.py      # 测试代码: 验证设置对话框能被正确打开

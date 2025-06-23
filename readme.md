@@ -14,10 +14,14 @@
 - **实时参数调优与预览**:
     - 任何参数（如阈值、形态学）的调整都会**实时**反映在多阶段预览窗口中。
     - 用户可以并排查看原始图像、灰度图、二值化图和形态学处理后的效果，直观地理解每个参数的作用。
-- **向导式定量分析**:
-    - 通过分析向导，用户可以在分析前设定物理过滤条件（如最小裂缝长度、最小长宽比），以排除噪声和不相关的细节。
-    - 最终计算裂缝的核心物理参数：数量、总面积(mm²)、总长度(mm)。
+- **参数化定量分析**:
+    - **独立的参数面板**: 将复杂的参数设置移至独立的对话框中（二值化、形态学、过滤与合并），保持主界面整洁。
+    - **物理单位过滤**: 用户可以设定物理过滤条件（如最小裂缝长度mm、最小长宽比），以排除噪声和不相关的细节。
+    - **一键分析**: 配置完成后，点击一下即可完成从裂缝识别到物理参数计算的全过程，包括：数量、总面积(mm²)、总长度(mm)。
 - **手动测量工具**: 提供一个简单的手动测量工具，用户可以在图像上绘制直线以快速测量任意两点间的物理距离。
+- **参数导入/导出**:
+    - 支持将整套分析配置保存为JSON文件，方便重复使用和分享。
+    - 可以随时加载之前保存的参数，一键恢复分析环境。
 
 ## 安装与运行
 
@@ -60,35 +64,41 @@
 ```mermaid
 graph TD
     subgraph UI_Layer_用户界面层
-        Controls[UI_Controls_界面控件]
-        Display[Image_Display_图像与结果显示]
-        Preview[Multi_Stage_Preview_多阶段预览]
+        MainWindow[Main_Window 主窗口]
+        subgraph Controls [Controls 交互控件]
+            ControlPanel[Control_Panel 控制面板]
+            SettingsDialogs[Settings_Dialogs 参数设置对话框]
+        end
+        subgraph Display [Display 图像与结果显示]
+            Preview[Multi_Stage_Preview 多阶段预览]
+            Results[Analysis_Results 分析结果]
+        end
+        MainWindow --> ControlPanel
+        ControlPanel -- "打开" --> SettingsDialogs
+        MainWindow --> Preview
+        MainWindow --> Results
     end
 
     subgraph Business_Logic_Layer_业务逻辑层
-        Controller[Process_Controller_流程控制器]
+        Controller[Process_Controller 流程控制器]
         Converter[Unit_Converter_单位换算引擎]
-        AnalysisStages[Analysis_Stages_分析阶段定义]
     end
 
     subgraph Data_Processing_Layer_数据处理层
-        IO[Image_IO_图像读写模块]
-        CV[OpenCV_Functions_图像处理函数]
-        Results[Analysis_Results_分析结果存储]
+        Processor[Image_Processor 图像处理器]
     end
 
     %% 详细交互流程
-    Controls -- "1.用户操作" --> Controller
-    Controller -- "2.调用加载" --> IO
-    IO -- "3.返回图像与DPI" --> Controller
-    Controller -- "4.调用处理" --> CV
-    CV -- "5.返回像素结果" --> Controller
-    Controller -- "6.调用换算" --> Converter
-    Converter -- "7.返回物理尺寸" --> Controller
-    Controller -- "8.保存结果" --> Results
-    Results -- "9.提供结果" --> Controller
-    Controller -- "10.更新界面" --> Display
-    Controller -- "11.更新预览" --> Preview
+    SettingsDialogs -- "1.用户调整参数" --> Controller
+    Controller -- "2.调用处理" --> Processor
+    Processor -- "3.返回像素结果" --> Controller
+    Controller -- "4.更新预览" --> Preview
+    ControlPanel -- "5.用户点击'开始分析'" --> Controller
+    Controller -- "6.调用完整分析" --> Processor
+    Processor -- "7.返回最终裂缝数据(像素)" --> Controller
+    Controller -- "8.调用换算" --> Converter
+    Converter -- "9.返回物理尺寸" --> Controller
+    Controller -- "10.更新最终结果" --> Results
 ```
 
 **技术栈**：
@@ -105,6 +115,6 @@ graph TD
 2. **灰度处理 (GRAYSCALE)**: 转换为灰度图的处理结果
 3. **阈值分割 (THRESHOLD)**: 二值化后的黑白图像
 4. **形态学处理 (MORPHOLOGY)**: 应用开闭运算后的形态学处理结果
-5. **裂缝检测 (DETECTION)**: 检测到的裂缝轮廓
-6. **测量结果 (MEASUREMENT)**: 最终的测量数据和标注结果
+5. **裂缝检测 (DETECTION)**: 在原图上将识别出的裂缝轮廓用颜色标记出来的可视化结果。
+6. **测量结果 (MEASUREMENT)**: 对所有检测出的裂缝进行定量计算后得到的结构化数据，包括数量、总长度、总面积等。
 

@@ -5,6 +5,7 @@
 
 """
 
+import json
 from PyQt5.QtCore import QObject, pyqtSignal
 
 from .image_processor import ImageProcessor
@@ -18,6 +19,7 @@ class Controller(QObject):
     analysis_complete = pyqtSignal(dict)
     preview_stage_updated = pyqtSignal(AnalysisStage, dict)
     error_occurred = pyqtSignal(str)
+    parameters_updated = pyqtSignal(dict)
 
     def __init__(self):
         """初始化控制器。"""
@@ -30,7 +32,91 @@ class Controller(QObject):
         self.current_dpi = None
         self.current_image_path = None
         self.analysis_results = {}
-        self.merge_fractures_enabled = False
+        self.analysis_params = {}
+        
+        self._load_default_parameters()
+
+    def _load_default_parameters(self):
+        """加载默认分析参数。"""
+        try:
+            with open('config/default_params.json', 'r', encoding='utf-8') as f:
+                self.analysis_params = json.load(f)
+            print("成功加载默认参数。")
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            self.error_occurred.emit(f"无法加载默认参数文件: {e}")
+            # 在没有默认文件时提供一组基本参数
+            self.analysis_params = {
+                "version": "1.0",
+                "analysis_parameters": {
+                    "threshold": {
+                        "method": "adaptive_gaussian",
+                        "global_value": 127,
+                        "adaptive_block_size": 11,
+                        "adaptive_c_value": 2,
+                        "niblack_window_size": 25,
+                        "niblack_k": -0.2,
+                        "sauvola_window_size": 25,
+                        "sauvola_k": 0.2,
+                        "sauvola_r": 128
+                    },
+                    "morphology": {
+                        "open_kernel_size": 3,
+                        "open_iterations": 1,
+                        "close_kernel_size": 3,
+                        "close_iterations": 1
+                    },
+                    "filtering": {
+                        "min_length_mm": 5.0,
+                        "min_aspect_ratio": 3.0
+                    },
+                    "merging": {
+                        "enabled": False,
+                        "merge_distance_mm": 2.0
+                    }
+                }
+            }
+
+    def load_parameters(self, filepath: str):
+        """从文件加载分析参数。"""
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                self.analysis_params = json.load(f)
+            print(f"成功从 {filepath} 加载参数。")
+            self.parameters_updated.emit(self.analysis_params)
+            # 参数加载后，触发一次完整的预览更新
+            self.on_threshold_params_changed()
+        except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
+            self.error_occurred.emit(f"加载参数文件失败: {e}")
+
+    def save_parameters(self, filepath: str):
+        """将当前分析参数保存到文件。"""
+        try:
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(self.analysis_params, f, ensure_ascii=False, indent=4)
+            print(f"参数成功保存至 {filepath}。")
+        except IOError as e:
+            self.error_occurred.emit(f"保存参数文件失败: {e}")
+            
+    def update_parameter(self, param_path: str, value):
+        """更新一个分析参数，并触发相应的预览更新。
+        
+        Args:
+            param_path (str): 参数的路径, e.g., "threshold.method"
+            value: 新的参数值
+        """
+        keys = param_path.split('.')
+        d = self.analysis_params['analysis_parameters']
+        for key in keys[:-1]:
+            d = d[key]
+        d[keys[-1]] = value
+        
+        print(f"参数已更新: {param_path} = {value}")
+
+        # 根据被修改的参数决定更新哪个预览
+        if keys[0] == 'threshold':
+            self.on_threshold_params_changed()
+        elif keys[0] == 'morphology':
+            self.on_morphology_params_changed()
 
     def load_image_from_file(self, file_path: str) -> tuple:
         """从文件加载图像。
@@ -65,8 +151,7 @@ class Controller(QObject):
             
             # 触发一次默认的阈值和形态学处理，以填充预览窗口
             print("[Controller] Triggering initial threshold and morphology processing.")
-            default_threshold_params = {'method': 'otsu', 'params': {}}
-            self.on_threshold_params_changed(default_threshold_params)
+            self.on_threshold_params_changed()
 
             return True, f"成功加载图像: {file_path}, DPI: {dpi}"
         except (FileNotFoundError, ValueError) as e:
@@ -74,17 +159,34 @@ class Controller(QObject):
         except Exception as e:
             return False, f"加载图像时发生意外错误: {str(e)}"
     
-    def on_threshold_params_changed(self, params: dict):
-        """响应阈值参数变化的槽函数。"""
-        print(f"[Controller] Slot on_threshold_params_changed called with: {params}")
+    def on_threshold_params_changed(self):
+        """根据当前的参数状态，重新应用阈值处理。"""
+        print(f"[Controller] Slot on_threshold_params_changed called.")
         if self.current_image is None:
             return
-            
+
         try:
+            params = self.analysis_params['analysis_parameters']['threshold']
+            method = params['method']
+            
+            threshold_params = {}
+            if method == 'global':
+                threshold_params = {'value': params['global_value']}
+            elif method == 'adaptive_gaussian':
+                threshold_params = {'block_size': params['adaptive_block_size'], 'c': params['adaptive_c_value']}
+            elif method == 'niblack':
+                threshold_params = {'window_size': params['niblack_window_size'], 'k': params['niblack_k']}
+            elif method == 'sauvola':
+                threshold_params = {
+                    'window_size': params['sauvola_window_size'], 
+                    'k': params['sauvola_k'], 
+                    'r': params['sauvola_r']
+                }
+
             result = self.image_processor.apply_threshold(
                 self.current_image, 
-                method=params.get('method'), 
-                params=params.get('params')
+                method=method,
+                params=threshold_params
             )
             self.save_analysis_result(AnalysisStage.THRESHOLD, result)
             self.preview_stage_updated.emit(AnalysisStage.THRESHOLD, result)
@@ -99,41 +201,36 @@ class Controller(QObject):
             self.error_occurred.emit(error_msg)
             print(error_msg)
 
-    def on_morphology_params_changed(self, params: dict = None):
-        """响应形态学参数变化的槽函数。"""
-        # 如果没有传入新参数，尝试使用已保存的参数
-        print(f"[Controller] Slot on_morphology_params_changed called with: {params}")
-        if params:
-            self.morphology_params = params # 保存最新参数
+    def on_morphology_params_changed(self):
+        """根据当前的参数状态，重新应用形态学处理。"""
+        print(f"[Controller] Slot on_morphology_params_changed called.")
         
-        morphology_params = getattr(self, 'morphology_params', None)
-        if not morphology_params:
-            print("[Controller] Morphology params not set yet, initializing with default.")
-            # 如果没有已存参数（通常是首次链式调用），则创建默认参数
-            self.morphology_params = {
-                "opening_strategy": "standard",
-                "closing_strategy": "standard",
-                "params": {
-                    "standard_opening": {'kernel_shape': 'rect', 'kernel_size': (3, 3), 'iterations': 1},
-                    "area_based_opening": {},
-                    "standard_closing": {'kernel_shape': 'rect', 'kernel_size': (3, 3), 'iterations': 1},
-                    "strong_closing": {}
-                }
-            }
-            morphology_params = self.morphology_params
-
         threshold_result = self.get_analysis_result(AnalysisStage.THRESHOLD)
         if not threshold_result or 'binary' not in threshold_result:
             print("[Controller] Morphology cannot proceed, dependent threshold result is missing.")
             return # 依赖的阈值结果不存在
 
         try:
+            params = self.analysis_params['analysis_parameters']['morphology']
             binary_image = threshold_result['binary']
+            
+            # 构造传递给 image_processor 的参数
+            processing_params = {
+                "standard_opening": {
+                    'kernel_size': (params['open_kernel_size'], params['open_kernel_size']),
+                    'iterations': params['open_iterations']
+                },
+                "standard_closing": {
+                    'kernel_size': (params['close_kernel_size'], params['close_kernel_size']),
+                    'iterations': params['close_iterations']
+                }
+            }
+
             result = self.image_processor.apply_morphological_postprocessing(
                 binary_image,
-                opening_strategy=morphology_params.get('opening_strategy'),
-                closing_strategy=morphology_params.get('closing_strategy'),
-                params=morphology_params.get('params')
+                opening_strategy="standard", # 假设目前只用标准方法
+                closing_strategy="standard",
+                params=processing_params
             )
             self.save_analysis_result(AnalysisStage.MORPHOLOGY, result)
             self.preview_stage_updated.emit(AnalysisStage.MORPHOLOGY, result)
@@ -155,14 +252,8 @@ class Controller(QObject):
         """获取当前图像的DPI信息。"""
         return self.current_dpi
         
-    def run_fracture_analysis(self, min_aspect_ratio: float, min_length: float, merge_params: dict = None):
-        """驱动完整的裂缝分析流程。
-        
-        Args:
-            min_aspect_ratio (float): 用于过滤噪声的最小长宽比。
-            min_length (float): 过滤裂缝的最小长度（单位：毫米）。
-            merge_params (dict): 轮廓合并参数, e.g., {'max_distance': 10, 'max_angle_diff': 15}
-        """
+    def run_fracture_analysis(self):
+        """驱动完整的裂缝分析流程，使用存储的参数。"""
         if self.current_dpi is None:
             self.error_occurred.emit("无法分析：缺少DPI信息。")
             return
@@ -173,6 +264,14 @@ class Controller(QObject):
             return
 
         binary_image = morphology_result['image']
+        
+        # 从 self.analysis_params 获取所有参数
+        params = self.analysis_params['analysis_parameters']
+        filtering_params = params['filtering']
+        merging_params = params['merging']
+
+        min_aspect_ratio = filtering_params['min_aspect_ratio']
+        min_length_mm = filtering_params['min_length_mm']
 
         # 将最小长度从毫米转换为像素
         dpi = self.current_dpi[0] if self.current_dpi else 0
@@ -180,7 +279,7 @@ class Controller(QObject):
             self.error_occurred.emit("无法进行长度过滤：DPI为0或无效。")
             min_length_pixels = 0
         else:
-            min_length_pixels = self.unit_converter.mm_to_pixels(min_length, dpi)
+            min_length_pixels = self.unit_converter.mm_to_pixels(min_length_mm, dpi)
 
         fractures_pixels = self.image_processor.analyze_fractures(
             binary_image, 
@@ -189,11 +288,16 @@ class Controller(QObject):
         )
         
         # (可选) 智能合并轮廓
-        if self.merge_fractures_enabled and merge_params:
+        if merging_params['enabled']:
+            # 注意：这里的参数键需要与 image_processor.merge_fractures 的预期匹配
+            # 假设它需要 merge_distance_pixels
+            merge_distance_pixels = self.unit_converter.mm_to_pixels(merging_params['merge_distance_mm'], dpi)
+            max_angle_diff = merging_params['max_angle_diff']
+            
             fractures_pixels = self.image_processor.merge_fractures(
                 fractures_pixels,
-                max_distance=merge_params.get('max_distance', 10),
-                max_angle_diff=merge_params.get('max_angle_diff', 15)
+                max_distance=merge_distance_pixels,
+                max_angle_diff=max_angle_diff
             )
         
         # 单位转换
