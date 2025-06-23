@@ -69,32 +69,22 @@ class ResultPanel(QWidget):
         Args:
             results: 包含分析结果的字典。
         """
-        # DEBUG: 打印收到的结果字典内容
-        print("[DEBUG] ResultPanel received results:")
-        for key, value in results.items():
-            print(f"  - {key}: {value}")
-        
         # --- 更新摘要 ---
         summary_str = "分析摘要:\n\n"
-        summary_str += f"裂缝数量: {results.get('count', 0)}\n"
-        
-        # DEBUG: 检查'count'和'fracture_count'
-        print(f"[DEBUG] results.get('count'): {results.get('count')}")
-        print(f"[DEBUG] results.get('fracture_count'): {results.get('fracture_count')}")
-        
+        summary_str += f"裂缝数量: {results.get('fracture_count', 0)}\n"
         summary_str += f"总面积: {results.get('total_area_mm2', 0):.4f} mm²\n"
         summary_str += f"总长度: {results.get('total_length_mm', 0):.4f} mm\n"
         self.summary_text.setText(summary_str)
         
         # --- 更新详细数据表格 ---
-        details = results.get('details', [])
+        details = results.get('detailed_fractures', [])
         self.details_table.setRowCount(len(details))
         
         for row, item in enumerate(details):
-            self.details_table.setItem(row, 0, QTableWidgetItem(str(row + 1)))
-            self.details_table.setItem(row, 1, QTableWidgetItem(f"{item['area_mm2']:.4f}"))
-            self.details_table.setItem(row, 2, QTableWidgetItem(f"{item['length_mm']:.4f}"))
-            self.details_table.setItem(row, 3, QTableWidgetItem(f"{item['angle']:.2f}"))
+            self.details_table.setItem(row, 0, QTableWidgetItem(str(item.get('id', row + 1))))
+            self.details_table.setItem(row, 1, QTableWidgetItem(f"{item.get('area_mm2', 0):.4f}"))
+            self.details_table.setItem(row, 2, QTableWidgetItem(f"{item.get('length_mm', 0):.4f}"))
+            self.details_table.setItem(row, 3, QTableWidgetItem(f"{item.get('angle_degrees', 0):.2f}"))
 
     def update_dpi_info(self, dpi: Optional[Tuple[float, float]]) -> None:
         """更新图像DPI信息。

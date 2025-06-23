@@ -51,7 +51,9 @@ class PreviewWindow(QWidget):
         Args:
             image: 可以是QImage、QPixmap、numpy数组或文件路径
         """
+        print(f"[DEBUG] PreviewWindow.update_image called.")
         if image is None:
+            print("[DEBUG] Image is None, clearing label.")
             self.image_label.setText("无图像可显示")
             return
             
@@ -59,10 +61,13 @@ class PreviewWindow(QWidget):
         
         # 处理不同类型的输入
         if isinstance(image, QImage):
+            print("[DEBUG] Image is a QImage.")
             pixmap = QPixmap.fromImage(image)
         elif isinstance(image, QPixmap):
+            print("[DEBUG] Image is a QPixmap.")
             pixmap = image
         elif isinstance(image, np.ndarray):
+            print(f"[DEBUG] Image is a numpy array with shape: {image.shape}")
             # 将numpy数组转换为QImage
             height, width = image.shape[:2]
             
@@ -70,10 +75,12 @@ class PreviewWindow(QWidget):
             
             # 根据图像通道数选择合适的QImage格式
             if len(image.shape) == 2:  # 灰度图像
+                print("[DEBUG] Converting grayscale numpy array to QImage.")
                 # 确保数据在内存中是连续的
                 contiguous_image = np.ascontiguousarray(image)
                 qimg = QImage(contiguous_image.data, width, height, width, QImage.Format_Grayscale8)
             elif len(image.shape) == 3 and image.shape[2] == 3:  # 彩色图像
+                print("[DEBUG] Converting color numpy array to QImage.")
                 # OpenCV图像是BGR格式，需要转换为RGB
                 rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
                 # 确保数据在内存中是连续的
@@ -83,12 +90,16 @@ class PreviewWindow(QWidget):
 
             if qimg:
                 pixmap = QPixmap.fromImage(qimg)
+                print("[DEBUG] Successfully created QPixmap from numpy array.")
             else:
                 pixmap = None # 图像格式不受支持
+                print("[DEBUG] Unsupported numpy array format for QImage conversion.")
         elif isinstance(image, str):  # 假设是文件路径
+            print(f"[DEBUG] Image is a string (path): {image}")
             pixmap = QPixmap(image)
             
         if pixmap and not pixmap.isNull():
+            print(f"[DEBUG] Scaling and setting pixmap. Label size: {self.image_label.width()}x{self.image_label.height()}")
             # 调整图像大小以适应标签，保持纵横比
             pixmap = pixmap.scaled(
                 self.image_label.width(), 
@@ -97,11 +108,14 @@ class PreviewWindow(QWidget):
                 Qt.SmoothTransformation
             )
             self.image_label.setPixmap(pixmap)
+            print("[DEBUG] Pixmap set successfully.")
         else:
+            print("[DEBUG] Pixmap is None or null, setting fail text.")
             self.image_label.setText("图像加载失败")
             
     def clear_image(self):
         """清除显示的图像，并重置标签文本。"""
+        print("[DEBUG] PreviewWindow.clear_image called.")
         self.image_label.clear()
         self.image_label.setText("请加载图像...")
             
@@ -111,6 +125,7 @@ class PreviewWindow(QWidget):
         Args:
             image: 可以是QImage、QPixmap、numpy数组或文件路径
         """
+        print(f"[DEBUG] PreviewWindow.display_image called with image type: {type(image)}")
         self.update_image(image) 
 
     def update_preview(self, analysis_results):

@@ -150,6 +150,8 @@ class AnalysisPreviewWindow(QMainWindow):
 
     def clear_all(self):
         """清除所有预览面板的内容。"""
+        # 新增DEBUG: 确认此方法被调用
+        print("[DEBUG][AnalysisPreviewWindow] Method clear_all() called.")
         for panel in self.preview_panels.values():
             panel.preview.clear_image()
             panel.param_content.clear()

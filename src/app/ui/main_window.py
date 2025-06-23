@@ -186,6 +186,9 @@ class MainWindow(QMainWindow):
         Args:
             file_path (str): 图像文件的路径。
         """
+        # 在加载新图像之前，首先清空所有旧的预览
+        self.analysis_preview_window.clear_all()
+        
         self.statusBar().showMessage(f"正在加载图像: {file_path}...")
         
         # 使用控制器加载图像
@@ -204,9 +207,6 @@ class MainWindow(QMainWindow):
             
             # 更新结果面板显示DPI信息
             self.result_panel.update_dpi_info(dpi)
-            
-            # 清除分析预览窗口，后续更新由信号驱动
-            self.analysis_preview_window.clear_all()
             
             print(f"图像已成功加载: {file_path}")
         else:
@@ -255,10 +255,10 @@ class MainWindow(QMainWindow):
         """分析完成处理函数。
         
         Args:
-            results (dict): 分析结果，包括裂缝数量、总面积、总长度等。
+            results (dict): 包含分析结果的字典。
         """
-        self.statusBar().showMessage("裂缝分析完成。")
         self.result_panel.update_analysis_results(results)
+        self.statusBar().showMessage("分析完成。")
 
     def _on_preview_stage_updated(self, stage: AnalysisStage, result_data: dict):
         """预览阶段更新处理函数。

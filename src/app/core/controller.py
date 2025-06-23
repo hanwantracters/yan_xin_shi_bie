@@ -380,6 +380,9 @@ class Controller(QObject):
             print(f"  - total_length_mm: {measurement_result['total_length_mm']}")
             print(f"  - valid_fractures count: {len(valid_fractures)}")
             
+            # 新增DEBUG: 确认即将发送的数据
+            print(f"[DEBUG][Controller] Emitting 'analysis_complete' with keys: {list(measurement_result.keys())}")
+            
             self.save_analysis_result(AnalysisStage.MEASUREMENT, measurement_result)
             self.analysis_complete.emit(measurement_result)
             print("[Pipeline] Analysis finished successfully.")
