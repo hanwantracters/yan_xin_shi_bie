@@ -161,13 +161,16 @@ class MainWindow(QMainWindow):
         self.control_panel.loadImageClicked.connect(self._on_load_image)
         self.control_panel.startAnalysisClicked.connect(self._on_start_analysis)
         self.control_panel.measureToolClicked.connect(self._on_measure_tool)
-        self.control_panel.thresholdChanged.connect(self._on_threshold_changed)
-        self.control_panel.thresholdMethodChanged.connect(self._on_threshold_method_changed)
-        self.control_panel.adaptiveParamsChanged.connect(self._on_adaptive_params_changed)
-        self.control_panel.morphologyParamsChanged.connect(self._on_morphology_params_changed)
         
+        # 新的直接连接
+        self.control_panel.thresholdParamsChanged.connect(self.controller.on_threshold_params_changed)
+        self.control_panel.morphologyParamsChanged.connect(self.controller.on_morphology_params_changed)
+        self.control_panel.mergeFracturesToggled.connect(self.controller.on_merge_fractures_toggled)
+
         # 连接控制器信号
         self.controller.analysis_complete.connect(self._on_analysis_complete)
+        self.controller.preview_stage_updated.connect(self._on_preview_stage_updated)
+        self.controller.error_occurred.connect(self._on_error_occurred)
         
     def _on_menu_open_image(self):
         """菜单栏打开图像处理函数。"""
@@ -206,9 +209,8 @@ class MainWindow(QMainWindow):
             # 更新结果面板显示DPI信息
             self.result_panel.update_dpi_info(dpi)
             
-            # 清除并更新分析预览窗口
+            # 清除分析预览窗口，后续更新由信号驱动
             self.analysis_preview_window.clear_all()
-            self._update_analysis_preview()
             
             print(f"图像已成功加载: {file_path}")
         else:
@@ -230,10 +232,18 @@ class MainWindow(QMainWindow):
         wizard = AnalysisWizard(self)
         if wizard.exec_() == QDialog.Accepted:
             params = wizard.get_parameters()
+            merge_params = {
+                'max_distance': 15, # 可在未来UI中设置
+                'max_angle_diff': 20 # 可在未来UI中设置
+            }
             self.statusBar().showMessage("正在执行裂缝分析...")
             QApplication.setOverrideCursor(Qt.WaitCursor)
             
-            self.controller.run_fracture_analysis(params['min_aspect_ratio'])
+            self.controller.run_fracture_analysis(
+                min_aspect_ratio=params['min_aspect_ratio'],
+                min_length=params['min_length'],
+                merge_params=merge_params
+            )
             
             QApplication.restoreOverrideCursor()
 
@@ -248,113 +258,41 @@ class MainWindow(QMainWindow):
             
         # 更新预览窗口为最终的可视化结果
         detection_result = results.get(AnalysisStage.DETECTION)
-        if detection_result and 'image' in detection_result:
-            self.preview_window.display_image(detection_result['image'])
+        if detection_result:
+            self.preview_window.display_image(detection_result.get('image'))
         
-        # 更新多阶段分析预览窗口
-        self._update_analysis_preview()
+        # 分析完成后，用最终结果刷新一次所有预览标签页
+        self._update_all_analysis_previews()
         
+    def _on_preview_stage_updated(self, stage: AnalysisStage, result_data: dict):
+        """响应控制器发出的单个阶段预览更新信号。"""
+        print(f"[MainWindow] Slot _on_preview_stage_updated received signal for stage: {stage.name}")
+        self.analysis_preview_window.update_stage_preview(stage, result_data)
+
+    def _on_error_occurred(self, message: str):
+        """处理并显示来自控制器的错误信息。"""
+        QMessageBox.warning(self, "错误", message)
+        self.statusBar().showMessage(f"操作失败: {message}", 5000)
+
     def _on_measure_tool(self):
         """测量工具处理函数。"""
-        # 这里只是UI演示，创建一个测量对话框
-        dialog = MeasurementDialog(100.0, 96.0, 26.46, self)
-        dialog.exec_()
+        self.statusBar().showMessage("测量工具（待实现）")
         
-    def _on_threshold_changed(self, value):
-        """阈值变化处理函数。"""
-        self.controller.set_threshold_value(value)
-        self._update_analysis_preview()
-        
-    def _on_threshold_method_changed(self, method):
-        """阈值方法变化处理函数。"""
-        self.controller.set_threshold_method(method)
-        self._update_analysis_preview()
-
-    def _on_adaptive_params_changed(self, params):
-        """自适应阈值参数变化处理函数。"""
-        self.controller.set_adaptive_params(params)
-        self._update_analysis_preview()
-
-    def _on_morphology_params_changed(self, params):
-        """形态学参数变化处理函数。"""
-        self.controller.set_morphology_params(params)
-        self._update_analysis_preview()
-
     def _toggle_analysis_preview(self, checked):
-        """切换分析预览窗口的显示和隐藏。"""
+        """切换分析预览窗口的可见性。"""
         if checked:
             self.analysis_preview_window.show()
-            self._update_analysis_preview() # 打开时立即更新一次
         else:
             self.analysis_preview_window.hide()
-
-    def _update_analysis_preview(self):
-        """更新分析预览窗口的内容。"""
-        if not self.analysis_preview_window.isVisible() or self.controller.get_current_image() is None:
-            return
-
-        # 1. 原始图像
-        original_result = self.controller.get_analysis_result(AnalysisStage.ORIGINAL)
-        if original_result:
-            self.analysis_preview_window.update_stage(
-                AnalysisStage.ORIGINAL,
-                original_result.get('image'),
-                {
-                    'Path': original_result.get('path', 'N/A'),
-                    'DPI': str(original_result.get('dpi', 'N/A'))
-                }
-            )
-
-        # 2. 灰度图像
-        grayscale_result = self.controller.get_analysis_result(AnalysisStage.GRAYSCALE)
-        if grayscale_result:
-            self.analysis_preview_window.update_stage(
-                AnalysisStage.GRAYSCALE,
-                grayscale_result.get('image'),
-                {'Method': grayscale_result.get('method', 'standard')}
-            )
-
-        # 3. 阈值分割
-        threshold_result = self.controller.apply_threshold_segmentation()
-        if threshold_result:
-            self.analysis_preview_window.update_stage(
-                AnalysisStage.THRESHOLD,
-                threshold_result.get('binary'),
-                {
-                    'Method': threshold_result.get('method', 'N/A'),
-                    'Threshold': threshold_result.get('threshold', 'N/A'),
-                    'Params': str(threshold_result.get('params', {}))
-                }
-            )
-        
-        # 4. 形态学处理
-        morphology_result = self.controller.apply_morphological_processing()
-        if morphology_result:
-            self.analysis_preview_window.update_stage(
-                AnalysisStage.MORPHOLOGY,
-                morphology_result.get('image'),
-                {
-                    'Kernel Shape': morphology_result.get('kernel_shape', 'N/A'),
-                    'Kernel Size': str(morphology_result.get('kernel_size', 'N/A')),
-                    'Iterations': morphology_result.get('iterations', 'N/A')
-                }
-            )
-
-        # 5. 裂缝检测 (新增)
-        detection_result = self.controller.get_analysis_result(AnalysisStage.DETECTION)
-        if detection_result:
-            self.analysis_preview_window.update_stage(
-                AnalysisStage.DETECTION,
-                detection_result.get('image'),
-                {
-                    'Fracture Count': detection_result.get('fracture_count', 'N/A'),
-                }
-            )
+            
+    def _update_all_analysis_previews(self):
+        """使用控制器中的所有当前结果刷新分析预览窗口。"""
+        all_results = self.controller.get_all_analysis_results()
+        self.analysis_preview_window.clear_all()
+        for stage, result_data in all_results.items():
+            if result_data:
+                self.analysis_preview_window.update_stage_preview(stage, result_data)
 
     def _show_about(self):
         """显示关于对话框。"""
-        QMessageBox.about(
-            self, 
-            "关于", 
-            "岩石裂缝分析系统\n\n版本: 1.0.0\n\n用于分析岩石裂缝的图像处理软件"
-        ) 
+        QMessageBox.about(self, "关于", "岩石裂缝分析系统 v1.0\n\n一个用于岩心图像裂缝分析的桌面工具。") 

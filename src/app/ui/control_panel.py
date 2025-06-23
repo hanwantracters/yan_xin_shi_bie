@@ -18,7 +18,11 @@ from PyQt5.QtWidgets import (
     QWidget,
     QFileDialog,
     QGroupBox,
-    QRadioButton,
+    QComboBox,
+    QStackedWidget,
+    QSpinBox,
+    QDoubleSpinBox,
+    QCheckBox
 )
 
 from .morphology_settings_dialog import MorphologySettingsDialog
@@ -27,27 +31,25 @@ from .morphology_settings_dialog import MorphologySettingsDialog
 class ControlPanel(QWidget):
     """控制面板类，提供用户交互控制界面。
 
-    该类包含加载图像、开始分析和测量等按钮，以及阈值调节滑块。
+    该类包含加载图像、开始分析和测量等按钮，以及阈值调节控件。
     通过信号机制与主窗口进行通信。
 
     Attributes:
         loadImageClicked (pyqtSignal): 加载图像按钮点击时发出，携带文件路径字符串。
         startAnalysisClicked (pyqtSignal): 开始分析按钮点击时发出。
         measureToolClicked (pyqtSignal): 测量工具按钮点击时发出。
-        thresholdChanged (pyqtSignal): 阈值滑块值变化时发出，携带整数值。
-        thresholdMethodChanged (pyqtSignal): 阈值方法变化时发出，携带字符串。
-        adaptiveParamsChanged (pyqtSignal): 自适应阈值参数变化时发出，携带字典。
-        morphologyParamsChanged = pyqtSignal(dict)
+        thresholdParamsChanged (pyqtSignal): 阈值参数变化时发出，携带一个参数字典。
+        morphologyParamsChanged (pyqtSignal): 形态学参数变化时发出，携带一个参数字典。
+        mergeFracturesToggled (pyqtSignal): 合并裂缝按钮点击时发出，携带一个布尔值。
     """
 
     # 定义信号
-    loadImageClicked = pyqtSignal(str)  # 修改为传递文件路径
+    loadImageClicked = pyqtSignal(str)
     startAnalysisClicked = pyqtSignal()
     measureToolClicked = pyqtSignal()
-    thresholdChanged = pyqtSignal(int)
-    thresholdMethodChanged = pyqtSignal(str)
-    adaptiveParamsChanged = pyqtSignal(dict)
+    thresholdParamsChanged = pyqtSignal(dict)
     morphologyParamsChanged = pyqtSignal(dict)
+    mergeFracturesToggled = pyqtSignal(bool)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         """初始化控制面板。
@@ -66,15 +68,10 @@ class ControlPanel(QWidget):
         self.start_analysis_btn = QPushButton("开始分析")
         self.measure_btn = QPushButton("测量")
         self.morphology_settings_btn = QPushButton("形态学设置...")
+        self.merge_fractures_checkbox = QCheckBox("启用轮廓智能合并")
 
-        # 创建阈值方法选择组
-        self._create_threshold_method_group()
-
-        # 创建全局阈值相关控件
-        self._create_global_threshold_controls()
-
-        # 创建自适应阈值相关控件
-        self._create_adaptive_threshold_controls()
+        # 创建阈值设置组
+        self._create_threshold_group()
 
         # 创建主布局
         main_layout = QVBoxLayout()
@@ -82,9 +79,8 @@ class ControlPanel(QWidget):
         main_layout.addWidget(self.start_analysis_btn)
         main_layout.addWidget(self.measure_btn)
         main_layout.addWidget(self.morphology_settings_btn)
-        main_layout.addWidget(self.threshold_method_group)
-        main_layout.addWidget(self.global_threshold_widget)
-        main_layout.addWidget(self.adaptive_threshold_widget)
+        main_layout.addWidget(self.merge_fractures_checkbox)
+        main_layout.addWidget(self.threshold_group)
         main_layout.addStretch(1)  # 添加弹性空间
 
         self.setLayout(main_layout)
@@ -92,67 +88,115 @@ class ControlPanel(QWidget):
         # 连接信号
         self._connect_signals()
         
-        # 初始状态更新
-        self._on_threshold_method_changed()
+        # 首次触发参数信号
+        self._emit_threshold_params()
 
-    def _create_threshold_method_group(self):
-        """创建阈值方法选择组。"""
-        self.threshold_method_group = QGroupBox("阈值方法")
-        layout = QVBoxLayout()
-        self.global_radio = QRadioButton("全局阈值")
-        self.adaptive_radio = QRadioButton("自适应高斯")
-        self.otsu_radio = QRadioButton("Otsu自动阈值")
-        self.global_radio.setChecked(True)
-        layout.addWidget(self.global_radio)
-        layout.addWidget(self.adaptive_radio)
-        layout.addWidget(self.otsu_radio)
-        self.threshold_method_group.setLayout(layout)
+    def _create_threshold_group(self):
+        """创建完整的阈值设置UI组。"""
+        self.threshold_group = QGroupBox("阈值方法")
+        layout = QVBoxLayout(self.threshold_group)
 
-    def _create_global_threshold_controls(self):
-        """创建全局阈值控件。"""
-        self.global_threshold_widget = QWidget()
-        layout = QHBoxLayout()
-        self.threshold_label = QLabel("阈值:")
-        self.threshold_slider = QSlider(Qt.Horizontal)
-        self.threshold_slider.setRange(0, 255)
-        self.threshold_slider.setValue(128)
-        self.threshold_value_label = QLabel(str(self.threshold_slider.value()))
-        layout.addWidget(self.threshold_label)
-        layout.addWidget(self.threshold_slider)
-        layout.addWidget(self.threshold_value_label)
-        self.global_threshold_widget.setLayout(layout)
+        # 1. 方法选择下拉框
+        self.threshold_method_combo = QComboBox()
+        self.threshold_method_combo.addItems([
+            "全局阈值 (Global)",
+            "Otsu 自动阈值",
+            "自适应高斯 (Adaptive Gaussian)",
+            "Niblack",
+            "Sauvola"
+        ])
+        layout.addWidget(self.threshold_method_combo)
 
-    def _create_adaptive_threshold_controls(self):
-        """创建自适应阈值控件。"""
-        self.adaptive_threshold_widget = QWidget()
-        layout = QVBoxLayout()
+        # 2. 参数设置堆叠窗口
+        self.threshold_params_stack = QStackedWidget()
+        self.global_threshold_widget = self._create_global_threshold_widget()
+        self.otsu_widget = QWidget() # Otsu无参数，使用空QWidget
+        self.adaptive_widget = self._create_adaptive_gaussian_widget()
+        self.niblack_widget = self._create_niblack_sauvola_widget()
+        self.sauvola_widget = self._create_niblack_sauvola_widget(is_sauvola=True)
+        
+        self.threshold_params_stack.addWidget(self.global_threshold_widget)
+        self.threshold_params_stack.addWidget(self.otsu_widget)
+        self.threshold_params_stack.addWidget(self.adaptive_widget)
+        self.threshold_params_stack.addWidget(self.niblack_widget)
+        self.threshold_params_stack.addWidget(self.sauvola_widget)
+
+        layout.addWidget(self.threshold_params_stack)
+
+    def _create_global_threshold_widget(self) -> QWidget:
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(0, 5, 0, 0)
+        slider = QSlider(Qt.Horizontal, objectName="threshold_slider")
+        slider.setRange(0, 255); slider.setValue(128)
+        label = QLabel("128", objectName="value_label")
+        slider.valueChanged.connect(lambda v, lbl=label: lbl.setText(str(v)))
+        layout.addWidget(QLabel("阈值:"))
+        layout.addWidget(slider); layout.addWidget(label)
+        return widget
+
+    def _create_adaptive_gaussian_widget(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 5, 0, 0)
         
         # Block Size
-        block_size_layout = QHBoxLayout()
-        self.block_size_label = QLabel("Block Size:")
-        self.block_size_slider = QSlider(Qt.Horizontal)
-        self.block_size_slider.setRange(3, 51)
-        self.block_size_slider.setSingleStep(2)
-        self.block_size_slider.setValue(11)
-        self.block_size_value_label = QLabel(str(self.block_size_slider.value()))
-        block_size_layout.addWidget(self.block_size_label)
-        block_size_layout.addWidget(self.block_size_slider)
-        block_size_layout.addWidget(self.block_size_value_label)
+        bs_layout = QHBoxLayout()
+        bs_slider = QSlider(Qt.Horizontal, objectName="block_size_slider")
+        bs_slider.setRange(3, 51); bs_slider.setSingleStep(2); bs_slider.setValue(11)
+        bs_label = QLabel("11", objectName="value_label")
+        bs_slider.valueChanged.connect(lambda v, lbl=bs_label: lbl.setText(str(v)))
+        bs_layout.addWidget(QLabel("Block Size:"))
+        bs_layout.addWidget(bs_slider); bs_layout.addWidget(bs_label)
         
         # C Value
-        c_value_layout = QHBoxLayout()
-        self.c_value_label = QLabel("C Value:")
-        self.c_value_slider = QSlider(Qt.Horizontal)
-        self.c_value_slider.setRange(-10, 10)
-        self.c_value_slider.setValue(2)
-        self.c_value_value_label = QLabel(str(self.c_value_slider.value()))
-        c_value_layout.addWidget(self.c_value_label)
-        c_value_layout.addWidget(self.c_value_slider)
-        c_value_layout.addWidget(self.c_value_value_label)
+        c_layout = QHBoxLayout()
+        c_slider = QSlider(Qt.Horizontal, objectName="c_value_slider")
+        c_slider.setRange(-10, 10); c_slider.setValue(2)
+        c_label = QLabel("2", objectName="value_label")
+        c_slider.valueChanged.connect(lambda v, lbl=c_label: lbl.setText(str(v)))
+        c_layout.addWidget(QLabel("C Value:"))
+        c_layout.addWidget(c_slider); c_layout.addWidget(c_label)
         
-        layout.addLayout(block_size_layout)
-        layout.addLayout(c_value_layout)
-        self.adaptive_threshold_widget.setLayout(layout)
+        layout.addLayout(bs_layout); layout.addLayout(c_layout)
+        return widget
+
+    def _create_niblack_sauvola_widget(self, is_sauvola: bool = False) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 5, 0, 0)
+        
+        # Window Size
+        ws_layout = QHBoxLayout()
+        ws_slider = QSlider(Qt.Horizontal, objectName="window_size_slider")
+        ws_slider.setRange(3, 101); ws_slider.setSingleStep(2); ws_slider.setValue(25)
+        ws_label = QLabel("25", objectName="value_label")
+        ws_slider.valueChanged.connect(lambda v, lbl=ws_label: lbl.setText(str(v)))
+        ws_layout.addWidget(QLabel("Window Size:"))
+        ws_layout.addWidget(ws_slider); ws_layout.addWidget(ws_label)
+        layout.addLayout(ws_layout)
+
+        # K Value
+        k_layout = QHBoxLayout()
+        k_spinbox = QDoubleSpinBox(objectName="k_spinbox")
+        k_spinbox.setRange(-1.0, 1.0); k_spinbox.setSingleStep(0.05); k_spinbox.setValue(0.2)
+        k_layout.addWidget(QLabel("K Value:"))
+        k_layout.addWidget(k_spinbox)
+        layout.addLayout(k_layout)
+        
+        if is_sauvola:
+            # R Value (only for Sauvola)
+            r_layout = QHBoxLayout()
+            r_slider = QSlider(Qt.Horizontal, objectName="r_slider")
+            r_slider.setRange(0, 255); r_slider.setValue(128)
+            r_label = QLabel("128", objectName="value_label")
+            r_slider.valueChanged.connect(lambda v, lbl=r_label: lbl.setText(str(v)))
+            r_layout.addWidget(QLabel("R Value:"))
+            r_layout.addWidget(r_slider); r_layout.addWidget(r_label)
+            layout.addLayout(r_layout)
+            
+        return widget
+
 
     def _connect_signals(self) -> None:
         """连接所有内部信号和槽。"""
@@ -160,14 +204,49 @@ class ControlPanel(QWidget):
         self.start_analysis_btn.clicked.connect(self.startAnalysisClicked)
         self.measure_btn.clicked.connect(self.measureToolClicked)
         self.morphology_settings_btn.clicked.connect(self._on_morphology_settings_clicked)
+        self.merge_fractures_checkbox.toggled.connect(self.mergeFracturesToggled)
         
         # 阈值信号
-        self.threshold_slider.valueChanged.connect(self._on_threshold_changed)
-        self.global_radio.toggled.connect(self._on_threshold_method_changed)
-        self.adaptive_radio.toggled.connect(self._on_threshold_method_changed)
-        self.otsu_radio.toggled.connect(self._on_threshold_method_changed)
-        self.block_size_slider.valueChanged.connect(self._on_adaptive_params_changed)
-        self.c_value_slider.valueChanged.connect(self._on_adaptive_params_changed)
+        self.threshold_method_combo.currentIndexChanged.connect(self.threshold_params_stack.setCurrentIndex)
+        self.threshold_method_combo.currentIndexChanged.connect(self._emit_threshold_params)
+
+        # 连接所有参数控件
+        for widget in self.threshold_params_stack.findChildren(QWidget):
+            if isinstance(widget, QSlider):
+                widget.valueChanged.connect(self._emit_threshold_params)
+            elif isinstance(widget, QDoubleSpinBox):
+                widget.valueChanged.connect(self._emit_threshold_params)
+
+    def _emit_threshold_params(self):
+        """收集当前阈值参数并发出信号。"""
+        index = self.threshold_method_combo.currentIndex()
+        method_map = {
+            0: 'global', 1: 'otsu', 2: 'adaptive_gaussian', 3: 'niblack', 4: 'sauvola'
+        }
+        method = method_map.get(index)
+        params = {}
+        
+        if method == 'global':
+            w = self.global_threshold_widget
+            params['threshold'] = w.findChild(QSlider, 'threshold_slider').value()
+        elif method == 'adaptive_gaussian':
+            w = self.adaptive_widget
+            bs = w.findChild(QSlider, 'block_size_slider').value()
+            params['block_size'] = bs if bs % 2 != 0 else bs + 1 # 确保奇数
+            params['c'] = w.findChild(QSlider, 'c_value_slider').value()
+        elif method == 'niblack':
+            w = self.niblack_widget
+            ws = w.findChild(QSlider, 'window_size_slider').value()
+            params['window_size'] = ws if ws % 2 != 0 else ws + 1 # 确保奇数
+            params['k'] = w.findChild(QDoubleSpinBox, 'k_spinbox').value()
+        elif method == 'sauvola':
+            w = self.sauvola_widget
+            ws = w.findChild(QSlider, 'window_size_slider').value()
+            params['window_size'] = ws if ws % 2 != 0 else ws + 1 # 确保奇数
+            params['k'] = w.findChild(QDoubleSpinBox, 'k_spinbox').value()
+            params['r'] = w.findChild(QSlider, 'r_slider').value()
+            
+        self.thresholdParamsChanged.emit({'method': method, 'params': params})
 
     def _on_morphology_settings_clicked(self):
         """处理形态学设置按钮点击事件。"""
@@ -180,53 +259,8 @@ class ControlPanel(QWidget):
         else:
             self.morphology_dialog.activateWindow()
 
-    def _on_threshold_method_changed(self):
-        """处理阈值方法变化的槽函数。"""
-        method = self.get_selected_threshold_method()
-        self.global_threshold_widget.setVisible(method == 'global')
-        self.adaptive_threshold_widget.setVisible(method == 'adaptive_gaussian')
-        self.thresholdMethodChanged.emit(method)
-        
-    def _on_adaptive_params_changed(self):
-        """处理自适应阈值参数变化的槽函数。"""
-        block_size = self.block_size_slider.value()
-        if block_size % 2 == 0: # 确保为奇数
-            block_size +=1
-            self.block_size_slider.setValue(block_size)
-
-        self.block_size_value_label.setText(str(block_size))
-        c_value = self.c_value_slider.value()
-        self.c_value_value_label.setText(str(c_value))
-        
-        params = {'block_size': block_size, 'c': c_value}
-        self.adaptiveParamsChanged.emit(params)
-
-    def get_selected_threshold_method(self) -> str:
-        """获取当前选择的阈值方法。"""
-        if self.global_radio.isChecked():
-            return 'global'
-        if self.adaptive_radio.isChecked():
-            return 'adaptive_gaussian'
-        if self.otsu_radio.isChecked():
-            return 'otsu'
-        return 'global' # 默认
-
-    def _on_threshold_changed(self, value: int) -> None:
-        """处理阈值滑块值变化的槽函数。
-
-        更新显示阈值的标签，并发出带有新值的信号。
-
-        Args:
-            value (int): 滑块的新整数值。
-        """
-        self.threshold_value_label.setText(str(value))
-        self.thresholdChanged.emit(value)
-        
     def _on_load_image_clicked(self) -> None:
-        """处理加载图像按钮点击事件。
-        
-        打开文件选择对话框，让用户选择图像文件，然后发出带有文件路径的信号。
-        """
+        """处理加载图像按钮点击事件。"""
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "选择图像文件",
@@ -235,5 +269,4 @@ class ControlPanel(QWidget):
         )
         
         if file_path:
-            # 如果用户选择了文件，发出信号并携带文件路径
             self.loadImageClicked.emit(file_path) 

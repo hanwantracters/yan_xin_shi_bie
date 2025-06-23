@@ -4,26 +4,27 @@
 
 ## 文件说明
 
-- `main_window.py`: 主窗口，组织所有UI组件
-- `control_panel.py`: 控制面板，包含操作按钮和参数调整控件
-- `preview_window.py`: 图像预览窗口，显示图像
-- `analysis_preview_window.py`: 分析预览窗口，显示各个处理阶段的结果
-- `threshold_preview_window.py`: 阈值预览窗口(已弃用，由analysis_preview_window替代)
-- `result_panel.py`: 结果显示面板，展示分析数据
-- `measurement_dialog.py`: 测量对话框，实现手动测量功能
-- `morphology_settings_dialog.py`: 形态学参数设置对话框
-- `style_manager.py`: 样式管理器，统一管理应用的样式表
+- `main_window.py`: 主窗口，负责组装所有UI组件，并通过**信号与槽机制**协调它们与`Controller`的交互。
+- `control_panel.py`: 控制面板，提供所有用户操作的入口，包括多种**阈值算法选择**、参数实时调整、形态学设置和裂缝合并选项。
+- `preview_window.py`: 基础图像预览窗口，用于显示单张图像。
+- `analysis_preview_window.py`: **多标签页**的分析预览窗口，可并排查看图像在处理流程中（如灰度、阈值、形态学）的各个中间结果。
+- `analysis_wizard.py`: 分析向导，在执行最终分析前，引导用户输入**裂缝过滤参数**（如最小长度、最小长宽比）。
+- `result_panel.py`: 结果显示面板，以表格和摘要形式清晰地展示最终的量化分析数据。
+- `measurement_dialog.py`: 手动测量对话框，允许用户在图像上手动绘制标尺并查看物理长度。
+- `morphology_settings_dialog.py`: 形态学参数设置对话框，提供对开/闭运算等高级参数的精细控制。
+- `style_manager.py`: 样式管理器，集中管理应用的QSS样式表，确保界面风格的统一性。
 
 ## 组件交互
 
-UI组件通过Qt信号槽机制进行交互，主窗口负责协调各组件之间的通信。
-主窗口持有控制器实例，并将用户操作转发给控制器处理。
+- **核心协调者**: `MainWindow` 持有 `Controller` 的实例，并将来自 `ControlPanel` 的用户操作信号转发给 `Controller` 的槽函数。
+- **即时预览**: `ControlPanel` 中的任何参数调整（如阈值滑块）都会发出信号。`Controller` 接收信号后，重新处理图像并将更新后的中间结果图像发回 `AnalysisPreviewWindow` 的相应标签页中，实现了所见即所得的**实时参数调优**。
+- **向导式分析**: 点击"开始分析"按钮时，会弹出 `AnalysisWizard`。用户确认参数后，`MainWindow` 调用 `Controller` 的 `run_fracture_analysis` 方法，并将最终结果通过信号传递给 `ResultPanel` 和 `PreviewWindow`（用于显示叠加结果的图像）进行展示。
 
 ## 界面设计原则
 
-- 简洁清晰: 减少视觉干扰，突出重要信息
-- 即时反馈: 操作后立即显示结果
-- 分阶段展示: 通过分析预览窗口，用户可查看处理的每个阶段
+- **简洁清晰**: 界面布局直观，将主要操作集中在左侧控制面板，右侧用于结果展示。
+- **即时反馈**: 用户的每一个参数调整都能立即在分析预览窗口中看到效果。
+- **分阶段展示**: `AnalysisPreviewWindow` 的设计让用户能够清晰地理解图像处理的每一个步骤及其对最终结果的影响。
 
 ## 预览窗口设计
 

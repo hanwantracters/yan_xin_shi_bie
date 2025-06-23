@@ -13,6 +13,7 @@ from PIL import Image
 import os
 from typing import Tuple, Optional, TypedDict, List
 from skimage.morphology import skeletonize
+from skimage.filters import threshold_niblack, threshold_sauvola
 
 class FractureProperties(TypedDict):
     """单条裂缝的属性数据结构。"""
@@ -200,16 +201,18 @@ class ImageProcessor:
         
         Args:
             image: 输入的灰度图像
-            method: 阈值方法，可选值: 'global', 'adaptive_gaussian', 'otsu'
+            method: 阈值方法，可选值: 'global', 'adaptive_gaussian', 'otsu', 'niblack', 'sauvola'
             params: 方法参数字典，根据不同方法需要不同的参数
                 - global: {'threshold': 阈值(0-255)}
                 - adaptive_gaussian: {'block_size': 块大小, 'c': 常数}
                 - otsu: 不需要参数
+                - niblack: {'window_size': 窗口大小, 'k': k值}
+                - sauvola: {'window_size': 窗口大小, 'k': k值, 'r': r值}
             
         Returns:
             dict: 包含以下键的字典:
                 - 'binary': 二值图像
-                - 'threshold': 使用的阈值(对于otsu方法)
+                - 'threshold': 使用的阈值(对于otsu/global方法)
                 - 'method': 使用的方法名称
                 - 'params': 使用的参数
         """
@@ -239,6 +242,27 @@ class ImageProcessor:
             binary, otsu_thresh = self.apply_otsu_threshold(processed_image)
             result['binary'] = binary
             result['threshold'] = otsu_thresh
+
+        elif method == 'niblack':
+            window_size = params.get('window_size', 25)
+            k = params.get('k', 0.2)
+            # 确保 window_size 是奇数
+            if window_size % 2 == 0:
+                window_size += 1
+            thresh_niblack = threshold_niblack(processed_image, window_size=window_size, k=k)
+            binary = (processed_image > thresh_niblack).astype(np.uint8) * 255
+            result['binary'] = binary
+
+        elif method == 'sauvola':
+            window_size = params.get('window_size', 25)
+            k = params.get('k', 0.2)
+            r = params.get('r', 128)
+            # 确保 window_size 是奇数
+            if window_size % 2 == 0:
+                window_size += 1
+            thresh_sauvola = threshold_sauvola(processed_image, window_size=window_size, k=k, r=r)
+            binary = (processed_image > thresh_sauvola).astype(np.uint8) * 255
+            result['binary'] = binary
         
         print("阈值分割结果:", result);
         return result 
@@ -263,37 +287,102 @@ class ImageProcessor:
             # 默认返回矩形核
             return cv2.getStructuringElement(cv2.MORPH_RECT, kernel_size)
 
+    def _remove_small_noise_by_area(self, image: np.ndarray, min_area: int) -> np.ndarray:
+        """通过面积阈值移除二值图像中的小噪点。
+
+        Args:
+            image (np.ndarray): 输入的二值图像 (噪点为白色)。
+            min_area (int): 要保留的最小面积（像素）。
+
+        Returns:
+            np.ndarray: 去除小面积噪点后的图像。
+        """
+        # 查找所有轮廓
+        contours, _ = cv2.findContours(image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        output_image = np.zeros_like(image)
+        
+        # 遍历轮廓，只保留面积大于阈值的
+        for contour in contours:
+            if cv2.contourArea(contour) > min_area:
+                cv2.drawContours(output_image, [contour], -1, 255, thickness=cv2.FILLED)
+                
+        return output_image
+
     def apply_morphological_postprocessing(
         self, 
         binary_image: np.ndarray, 
-        kernel_shape: str = 'rect', 
-        kernel_size: Tuple[int, int] = (5, 5), 
-        iterations: int = 1
+        opening_strategy: str = 'standard',
+        closing_strategy: str = 'standard',
+        params: dict = None
     ) -> dict:
-        """对二值图像进行形态学后处理（开运算和闭运算）。
+        """对二值图像进行形态学后处理。
+
+        支持两种去噪（开运算）和两种连接（闭运算）策略。
 
         Args:
             binary_image (numpy.ndarray): 输入的二值图像。
-            kernel_shape (str): 核的形状。
-            kernel_size (tuple): 核的大小。
-            iterations (int): 迭代次数。
+            opening_strategy (str): 去噪策略, 'standard' 或 'area_based'。
+            closing_strategy (str): 连接策略, 'standard' 或 'strong'。
+            params (dict): 不同策略所需的参数字典。
+                - 'standard': {'kernel_shape': str, 'kernel_size': tuple, 'iterations': int}
+                - 'area_based': {'min_area': int}
+                - 'strong': {'kernel_shape': str, 'kernel_size': tuple, 'iterations': int}
 
         Returns:
             dict: 包含处理后图像及相关参数的字典。
         """
-        kernel = self.create_morphology_kernel(kernel_shape, kernel_size)
+        if params is None:
+            params = {}
+
+        processed_image = binary_image.copy()
+
+        # 1. 去噪 (开运算) 阶段
+        if opening_strategy == 'standard':
+            op_params = params.get('standard_opening', {})
+            kernel_shape = op_params.get('kernel_shape', 'rect')
+            kernel_size = op_params.get('kernel_size', (3, 3))
+            iterations = op_params.get('iterations', 1)
+            kernel = self.create_morphology_kernel(kernel_shape, kernel_size)
+            processed_image = cv2.bitwise_not(processed_image)
+            processed_image = cv2.morphologyEx(processed_image, cv2.MORPH_OPEN, kernel, iterations=iterations)
+            processed_image = cv2.bitwise_not(processed_image)
         
-        # 1. 开运算 (Opening): 先腐蚀后膨胀，用于去除小的噪点
-        opened_image = cv2.morphologyEx(binary_image, cv2.MORPH_OPEN, kernel, iterations=iterations)
+        elif opening_strategy == 'area_based':
+            area_params = params.get('area_based_opening', {})
+            min_area = area_params.get('min_area', 25)
+            # 注意：我们的裂缝是黑色的，噪点是白色的。所以需要先反转图像，去除白色噪点，再反转回来。
+            inverted_image = cv2.bitwise_not(processed_image)
+            denoised_inverted = self._remove_small_noise_by_area(inverted_image, min_area)
+            processed_image = cv2.bitwise_not(denoised_inverted)
+
+        # 2. 连接 (闭运算) 阶段
+        if closing_strategy == 'standard':
+            cl_params = params.get('standard_closing', {})
+            kernel_shape = cl_params.get('kernel_shape', 'rect')
+            kernel_size = cl_params.get('kernel_size', (3, 3))
+            iterations = cl_params.get('iterations', 1)
+            kernel = self.create_morphology_kernel(kernel_shape, kernel_size)
+            processed_image = cv2.bitwise_not(processed_image)
+            processed_image = cv2.morphologyEx(processed_image, cv2.MORPH_CLOSE, kernel, iterations=iterations)
+            processed_image = cv2.bitwise_not(processed_image)
         
-        # 2. 闭运算 (Closing): 先膨胀后腐蚀，用于连接断开的裂缝
-        closed_image = cv2.morphologyEx(opened_image, cv2.MORPH_CLOSE, kernel, iterations=iterations)
+        elif closing_strategy == 'strong':
+            # "强力"闭运算可以被实现为使用更大的核或更多的迭代次数
+            cl_params = params.get('strong_closing', {})
+            kernel_shape = cl_params.get('kernel_shape', 'rect')
+            kernel_size = cl_params.get('kernel_size', (7, 7)) # 使用更大的核
+            iterations = cl_params.get('iterations', 2) # 使用更多次迭代
+            kernel = self.create_morphology_kernel(kernel_shape, kernel_size)
+            processed_image = cv2.bitwise_not(processed_image)
+            processed_image = cv2.morphologyEx(processed_image, cv2.MORPH_CLOSE, kernel, iterations=iterations)
+            processed_image = cv2.bitwise_not(processed_image)
         
         result = {
-            'image': closed_image,
-            'kernel_shape': kernel_shape,
-            'kernel_size': kernel_size,
-            'iterations': iterations
+            'image': processed_image,
+            'opening_strategy': opening_strategy,
+            'closing_strategy': closing_strategy,
+            'params': params
         }
         
         return result 
@@ -301,13 +390,15 @@ class ImageProcessor:
     def analyze_fractures(
         self, 
         binary_image: np.ndarray, 
-        min_aspect_ratio: float = 5.0
+        min_aspect_ratio: float = 5.0,
+        min_length_pixels: float = 0.0
     ) -> List[FractureProperties]:
         """执行三步分析流水线来检测和测量裂缝。
 
         Args:
             binary_image (np.ndarray): 输入的二值图像 (形态学处理后)。
             min_aspect_ratio (float): 用于过滤噪声的最小长宽比。
+            min_length_pixels (float): 过滤裂缝的最小长度（以像素为单位）。
 
         Returns:
             List[FractureProperties]: 一个包含所有有效裂缝属性的列表。
@@ -342,6 +433,10 @@ class ImageProcessor:
                 skeleton = skeletonize(mask > 0)
                 length_pixels = np.sum(skeleton)
                 
+                # 新增：根据最小长度进行过滤
+                if length_pixels < min_length_pixels:
+                    continue
+
                 fracture_props: FractureProperties = {
                     'contour': contour,
                     'area_pixels': area_pixels,
@@ -352,6 +447,27 @@ class ImageProcessor:
                 valid_fractures.append(fracture_props)
                 
         return valid_fractures
+
+    def merge_fractures(
+        self, 
+        fractures: List[FractureProperties], 
+        max_distance: float, 
+        max_angle_diff: float
+    ) -> List[FractureProperties]:
+        """(待实现) 智能合并距离近、角度相似的断裂轮廓。
+
+        Args:
+            fractures (List[FractureProperties]): 待合并的裂缝列表。
+            max_distance (float): 合并两个轮廓端点的最大距离阈值。
+            max_angle_diff (float): 合并两个轮廓的最大角度差阈值。
+
+        Returns:
+            List[FractureProperties]: 合并后的裂缝列表。
+        """
+        # TODO: 在此实现轮廓合并的详细逻辑。
+        # 当前仅返回原始裂缝列表作为占位符。
+        print("警告: 'merge_fractures' 功能尚未实现。")
+        return fractures
 
     def draw_analysis_results(
         self, 

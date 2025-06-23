@@ -30,7 +30,14 @@ class AnalysisWizard(QDialog):
         self.aspect_ratio_spinbox.setValue(5.0)  # 默认值
         self.aspect_ratio_spinbox.setSuffix(" : 1")
         
+        # 最小裂缝长度输入
+        self.min_length_spinbox = QDoubleSpinBox()
+        self.min_length_spinbox.setRange(0.0, 10000.0)
+        self.min_length_spinbox.setValue(1.0) # 默认值
+        self.min_length_spinbox.setSuffix(" mm")
+        
         form_layout.addRow("最小长宽比 (Min Aspect Ratio):", self.aspect_ratio_spinbox)
+        form_layout.addRow("最小裂缝长度 (Min Length):", self.min_length_spinbox)
         
         # 按钮
         button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -47,7 +54,8 @@ class AnalysisWizard(QDialog):
     def get_parameters(self) -> dict:
         """获取用户设置的参数。"""
         return {
-            'min_aspect_ratio': self.aspect_ratio_spinbox.value()
+            'min_aspect_ratio': self.aspect_ratio_spinbox.value(),
+            'min_length': self.min_length_spinbox.value()
         }
 
 if __name__ == '__main__':

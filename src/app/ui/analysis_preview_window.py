@@ -108,21 +108,37 @@ class AnalysisPreviewWindow(QMainWindow):
             # 存储到字典
             self.preview_panels[stage] = panel
     
-    def update_stage(self, stage: AnalysisStage, image: 'np.ndarray', params: dict):
+    def update_stage_preview(self, stage: AnalysisStage, result_data: dict):
         """更新指定分析阶段的预览。
+
+        此方法会从结果字典中自动提取图像和参数进行显示。
 
         Args:
             stage (AnalysisStage): 要更新的分析阶段。
-            image (np.ndarray): 要显示的图像。
-            params (dict): 与该阶段相关的参数字典。
+            result_data (dict): 包含该阶段结果的完整字典。
         """
-        if stage in self.preview_panels:
-            panel = self.preview_panels[stage]
+        print(f"[AnalysisPreviewWindow] Updating preview for stage: {stage.name}")
+        if stage not in self.preview_panels:
+            return
+
+        panel = self.preview_panels[stage]
+        
+        # 1. 提取图像
+        image = None
+        if 'image' in result_data:
+            image = result_data['image']
+        elif 'binary' in result_data:
+            image = result_data['binary']
+        
+        if image is not None:
             panel.preview.display_image(image)
-            
-            # 格式化参数并显示
-            param_text = "\n".join([f"{key}: {value}" for key, value in params.items()])
-            panel.param_content.setText(param_text if param_text else "无参数信息")
+        else:
+            # 如果没有图像，可以清空或显示提示
+            panel.preview.clear_image()
+
+        # 2. 格式化并显示参数
+        param_text = self._format_parameters(stage, result_data)
+        panel.param_content.setText(param_text)
 
     def clear_all(self):
         """清除所有预览面板的内容。"""
@@ -130,30 +146,47 @@ class AnalysisPreviewWindow(QMainWindow):
             panel.preview.clear_image()
             panel.param_content.clear()
             
-    def _format_parameters(self, result_data):
-        """格式化参数信息。
+    def _format_parameters(self, stage: AnalysisStage, result_data: dict) -> str:
+        """根据阶段和结果数据，智能地格式化参数信息。
         
         Args:
-            result_data: 分析结果数据
+            stage (AnalysisStage): 当前分析阶段。
+            result_data (dict): 分析结果数据。
             
         Returns:
-            str: 格式化的参数信息文本
+            str: 格式化的参数信息文本。
         """
-        # 排除图像数据
-        exclude_keys = ['image', 'binary']
+        if not result_data:
+            return "无参数信息"
+
         param_lines = []
-        
-        for key, value in result_data.items():
-            if key not in exclude_keys:
-                # 对于method和params等常见键进行特殊处理
-                if key == 'method':
-                    param_lines.append(f"方法: {value}")
-                elif key == 'params' and isinstance(value, dict):
-                    for param_key, param_value in value.items():
-                        param_lines.append(f"{param_key}: {param_value}")
-                elif key == 'threshold':
-                    param_lines.append(f"阈值: {value}")
+
+        # 特殊处理测量阶段，只显示摘要
+        if stage == AnalysisStage.MEASUREMENT:
+            param_lines.append(f"裂缝数量: {result_data.get('count', 'N/A')}")
+            param_lines.append(f"总面积 (mm²): {result_data.get('total_area_mm2', 'N/A')}")
+            param_lines.append(f"总长度 (mm): {result_data.get('total_length_mm', 'N/A')}")
+            if result_data.get('details'):
+                 param_lines.append(f"\n详情请在主面板查看。")
+            return "\n".join(param_lines)
+
+        # 通用格式化逻辑
+        def format_dict(d, indent=0):
+            lines = []
+            exclude_keys = ['image', 'binary', 'details', 'contour', 'centroid_pixels']
+            
+            for key, value in d.items():
+                if key in exclude_keys:
+                    continue
+                
+                prefix = "  " * indent
+                if isinstance(value, dict) and value:
+                    lines.append(f"{prefix}{key}:")
+                    lines.extend(format_dict(value, indent + 1))
                 else:
-                    param_lines.append(f"{key}: {value}")
+                    lines.append(f"{prefix}{key}: {value}")
+            return lines
+
+        param_lines = format_dict(result_data)
         
         return "\n".join(param_lines) if param_lines else "无参数信息" 
