@@ -4,7 +4,10 @@
 总面积和总长度等信息。
 """
 
-from PyQt5.QtWidgets import QWidget, QTextEdit, QVBoxLayout, QLabel
+from PyQt5.QtWidgets import (
+    QWidget, QTextEdit, QVBoxLayout, QLabel, QTabWidget,
+    QTableWidget, QTableWidgetItem, QHeaderView
+)
 from PyQt5.QtCore import Qt
 from typing import Dict, Any, Optional, Tuple
 
@@ -34,85 +37,81 @@ class ResultPanel(QWidget):
         title_label.setAlignment(Qt.AlignCenter)
         title_label.setProperty("title", "true")  # 添加属性以便样式表识别
         
-        # 创建文本编辑器
-        self.result_text = QTextEdit()
-        self.result_text.setReadOnly(True)  # 设置为只读
+        # 创建Tab小部件
+        self.tabs = QTabWidget()
+
+        # 创建摘要文本编辑器
+        self.summary_text = QTextEdit()
+        self.summary_text.setReadOnly(True)
+        self.summary_text.setText("请加载图像并开始分析...")
         
-        # 设置默认文本
-        self.result_text.setText("请加载图像并开始分析...")
-        
+        # 创建详细结果表格
+        self.details_table = QTableWidget()
+        self.details_table.setColumnCount(4)
+        self.details_table.setHorizontalHeaderLabels(["ID", "面积 (mm²)", "长度 (mm)", "角度 (°)"])
+        self.details_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.details_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+
+        # 添加Tab
+        self.tabs.addTab(self.summary_text, "摘要")
+        self.tabs.addTab(self.details_table, "详细数据")
+
         # 创建主布局
         main_layout = QVBoxLayout()
         main_layout.addWidget(title_label)
-        main_layout.addWidget(self.result_text)
+        main_layout.addWidget(self.tabs)
         
         self.setLayout(main_layout)
         
-    def update_results(self, results: Dict[str, Any]) -> None:
-        """更新分析结果。
-        
-        接收分析结果字典并更新到文本编辑器中显示。
+    def update_analysis_results(self, results: Dict[str, Any]) -> None:
+        """更新分析结果，包括摘要和详细数据。
         
         Args:
-            results: 包含分析结果的字典，可能包含以下键:
-                    - count: 裂缝数量
-                    - total_area_mm2: 总面积(平方毫米)
-                    - total_length_mm: 总长度(毫米)
+            results: 包含分析结果的字典。
         """
-        # 清空当前文本
-        self.result_text.clear()
+        # --- 更新摘要 ---
+        summary_str = "分析摘要:\n\n"
+        summary_str += f"裂缝数量: {results.get('count', 0)}\n"
+        summary_str += f"总面积: {results.get('total_area_mm2', 0):.4f} mm²\n"
+        summary_str += f"总长度: {results.get('total_length_mm', 0):.4f} mm\n"
+        self.summary_text.setText(summary_str)
         
-        # 如果结果为空，显示提示信息
-        if not results:
-            self.result_text.setText("未检测到有效结果。")
-            return
+        # --- 更新详细数据表格 ---
+        details = results.get('details', [])
+        self.details_table.setRowCount(len(details))
         
-        # 构建结果文本
-        result_str = "分析结果:\n\n"
-        
-        if 'count' in results:
-            result_str += f"裂缝数量: {results['count']}\n"
-            
-        if 'total_area_mm2' in results:
-            result_str += f"总面积: {results['total_area_mm2']:.2f} 平方毫米\n"
-            
-        if 'total_length_mm' in results:
-            result_str += f"总长度: {results['total_length_mm']:.2f} 毫米\n"
-        
-        # 添加其他可能的结果项
-        for key, value in results.items():
-            if key not in ['count', 'total_area_mm2', 'total_length_mm']:
-                result_str += f"{key}: {value}\n"
-        
-        # 更新文本
-        self.result_text.setText(result_str)
-        
+        for row, item in enumerate(details):
+            self.details_table.setItem(row, 0, QTableWidgetItem(str(row + 1)))
+            self.details_table.setItem(row, 1, QTableWidgetItem(f"{item['area_mm2']:.4f}"))
+            self.details_table.setItem(row, 2, QTableWidgetItem(f"{item['length_mm']:.4f}"))
+            self.details_table.setItem(row, 3, QTableWidgetItem(f"{item['angle']:.2f}"))
+
     def update_dpi_info(self, dpi: Optional[Tuple[float, float]]) -> None:
         """更新图像DPI信息。
         
         Args:
             dpi: 图像的DPI信息，格式为(x_dpi, y_dpi)，如果为None则显示未知DPI
         """
-        # 获取当前文本
-        current_text = self.result_text.toPlainText()
+        # 清空所有
+        self.summary_text.clear()
+        self.details_table.setRowCount(0)
         
-        # 如果当前文本是默认提示，则清空
-        if current_text == "请加载图像并开始分析...":
-            current_text = ""
-            
-        # 构建DPI信息文本
         if dpi is None:
             dpi_text = "图像DPI: 未知"
         else:
             x_dpi, y_dpi = dpi
-            if x_dpi == y_dpi:
-                dpi_text = f"图像DPI: {x_dpi}"
-            else:
-                dpi_text = f"图像DPI: X={x_dpi}, Y={y_dpi}"
-                
-        # 如果当前文本为空，直接设置DPI信息
-        if not current_text:
-            self.result_text.setText(dpi_text)
-        else:
-            # 否则，在当前文本前面添加DPI信息
-            self.result_text.setText(f"{dpi_text}\n\n{current_text}") 
+            dpi_text = f"图像DPI: {x_dpi}" if x_dpi == y_dpi else f"图像DPI: X={x_dpi}, Y={y_dpi}"
+        
+        self.summary_text.setText(f"{dpi_text}\n\n请开始分析...")
+
+    def clear_results(self):
+        """清空所有结果显示。"""
+        self.summary_text.setText("请加载图像并开始分析...")
+        self.details_table.setRowCount(0)
+
+# 移除旧的 update_results 方法，因为它被 update_analysis_results 替代了。
+# 为了简洁，这里直接注释掉了，但在实际编辑中会删除它。
+#
+#    def update_results(self, results: Dict[str, Any]) -> None:
+#        ...
+        

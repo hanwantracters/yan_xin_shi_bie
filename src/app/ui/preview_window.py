@@ -66,18 +66,25 @@ class PreviewWindow(QWidget):
             # 将numpy数组转换为QImage
             height, width = image.shape[:2]
             
-            # OpenCV图像是BGR格式，需要转换为RGB
-            if len(image.shape) == 3 and image.shape[2] == 3:
-                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            qimg = None # 初始化qimg
             
             # 根据图像通道数选择合适的QImage格式
             if len(image.shape) == 2:  # 灰度图像
-                qimg = QImage(image.data, width, height, width, QImage.Format_Grayscale8)
-            else:  # 彩色图像
+                # 确保数据在内存中是连续的
+                contiguous_image = np.ascontiguousarray(image)
+                qimg = QImage(contiguous_image.data, width, height, width, QImage.Format_Grayscale8)
+            elif len(image.shape) == 3 and image.shape[2] == 3:  # 彩色图像
+                # OpenCV图像是BGR格式，需要转换为RGB
+                rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                # 确保数据在内存中是连续的
+                contiguous_image = np.ascontiguousarray(rgb_image)
                 bytes_per_line = 3 * width
-                qimg = QImage(image.data, width, height, bytes_per_line, QImage.Format_RGB888)
-                
-            pixmap = QPixmap.fromImage(qimg)
+                qimg = QImage(contiguous_image.data, width, height, bytes_per_line, QImage.Format_RGB888)
+
+            if qimg:
+                pixmap = QPixmap.fromImage(qimg)
+            else:
+                pixmap = None # 图像格式不受支持
         elif isinstance(image, str):  # 假设是文件路径
             pixmap = QPixmap(image)
             

@@ -14,6 +14,31 @@
 - **单位换算**：基于图像DPI信息，自动将像素单位转换为物理单位(mm)
 - **多阶段分析预览**：提供分析预览窗口，可查看各个处理阶段（原图、灰度图、阈值分割等）的结果
 
+## 安装与运行
+
+1.  **克隆仓库**:
+    ```bash
+    git clone <your-repo-url>
+    cd rock-fracture-analyzer
+    ```
+
+2.  **创建虚拟环境 (推荐)**:
+    ```bash
+    python -m venv venv
+    source venv/bin/activate  # on Windows, use `venv\Scripts\activate`
+    ```
+
+3.  **安装依赖**:
+    项目的所有依赖都已在 `requirements.txt` 文件中列出。运行以下命令进行安装：
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+4.  **运行程序**:
+    ```bash
+    python run.py
+    ```
+
 ## 技术架构
 
 本软件采用**分层架构**，将应用程序在逻辑上划分为三个独立的层次：

@@ -12,7 +12,9 @@ from PyQt5.QtWidgets import (
     QWidget,
     QFileDialog,
     QMessageBox,
-    QLabel
+    QLabel,
+    QDialog,
+    QApplication
 )
 from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtGui import QIcon
@@ -24,6 +26,7 @@ from .preview_window import PreviewWindow
 from .analysis_preview_window import AnalysisPreviewWindow
 from .measurement_dialog import MeasurementDialog
 from .style_manager import style_manager  # 导入样式管理器
+from .analysis_wizard import AnalysisWizard
 
 # 导入控制器和枚举
 from ..core.controller import Controller
@@ -163,6 +166,9 @@ class MainWindow(QMainWindow):
         self.control_panel.adaptiveParamsChanged.connect(self._on_adaptive_params_changed)
         self.control_panel.morphologyParamsChanged.connect(self._on_morphology_params_changed)
         
+        # 连接控制器信号
+        self.controller.analysis_complete.connect(self._on_analysis_complete)
+        
     def _on_menu_open_image(self):
         """菜单栏打开图像处理函数。"""
         file_path, _ = QFileDialog.getOpenFileName(
@@ -216,10 +222,37 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("保存结果...")
         
     def _on_start_analysis(self):
-        """开始分析处理函数。"""
-        # 这里只是UI演示，实际功能需要与控制器连接
-        print("开始分析...");
-        self.statusBar().showMessage("开始分析...")
+        """开始分析处理函数，启动分析向导。"""
+        if self.controller.get_current_image() is None:
+            QMessageBox.warning(self, "操作无效", "请先加载一张图像再开始分析。")
+            return
+
+        wizard = AnalysisWizard(self)
+        if wizard.exec_() == QDialog.Accepted:
+            params = wizard.get_parameters()
+            self.statusBar().showMessage("正在执行裂缝分析...")
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            
+            self.controller.run_fracture_analysis(params['min_aspect_ratio'])
+            
+            QApplication.restoreOverrideCursor()
+
+    def _on_analysis_complete(self, results: dict):
+        """分析完成后的处理函数。"""
+        self.statusBar().showMessage("裂缝分析完成。", 5000)
+        
+        # 更新结果面板
+        measurement_result = results.get(AnalysisStage.MEASUREMENT)
+        if measurement_result:
+            self.result_panel.update_analysis_results(measurement_result)
+            
+        # 更新预览窗口为最终的可视化结果
+        detection_result = results.get(AnalysisStage.DETECTION)
+        if detection_result and 'image' in detection_result:
+            self.preview_window.display_image(detection_result['image'])
+        
+        # 更新多阶段分析预览窗口
+        self._update_analysis_preview()
         
     def _on_measure_tool(self):
         """测量工具处理函数。"""
@@ -304,6 +337,17 @@ class MainWindow(QMainWindow):
                     'Kernel Shape': morphology_result.get('kernel_shape', 'N/A'),
                     'Kernel Size': str(morphology_result.get('kernel_size', 'N/A')),
                     'Iterations': morphology_result.get('iterations', 'N/A')
+                }
+            )
+
+        # 5. 裂缝检测 (新增)
+        detection_result = self.controller.get_analysis_result(AnalysisStage.DETECTION)
+        if detection_result:
+            self.analysis_preview_window.update_stage(
+                AnalysisStage.DETECTION,
+                detection_result.get('image'),
+                {
+                    'Fracture Count': detection_result.get('fracture_count', 'N/A'),
                 }
             )
 

@@ -3,7 +3,8 @@ rock-fracture-analyzer/
 ├── .gitignore              # Git忽略文件配置
 ├── mermaid.md              # Mermaid图表文档
 ├── readme.md               # 项目说明文档
-├── requirements.md         # 项目需求列表
+├── requirements.txt        # Python依赖包列表
+├── requirement_status.md   # 项目需求列表
 ├── run.py                  # 应用程序主入口脚本
 ├── structure.md            # (本文档) 项目结构说明
 │

@@ -11,7 +11,16 @@ import cv2
 import numpy as np
 from PIL import Image
 import os
-from typing import Tuple, Optional
+from typing import Tuple, Optional, TypedDict, List
+from skimage.morphology import skeletonize
+
+class FractureProperties(TypedDict):
+    """单条裂缝的属性数据结构。"""
+    contour: np.ndarray
+    area_pixels: float
+    length_pixels: float
+    angle: float
+    centroid_pixels: Tuple[float, float]
 
 class ImageProcessor:
     """图像处理器类，包含所有图像处理相关的方法。"""
@@ -288,3 +297,84 @@ class ImageProcessor:
         }
         
         return result 
+
+    def analyze_fractures(
+        self, 
+        binary_image: np.ndarray, 
+        min_aspect_ratio: float = 5.0
+    ) -> List[FractureProperties]:
+        """执行三步分析流水线来检测和测量裂缝。
+
+        Args:
+            binary_image (np.ndarray): 输入的二值图像 (形态学处理后)。
+            min_aspect_ratio (float): 用于过滤噪声的最小长宽比。
+
+        Returns:
+            List[FractureProperties]: 一个包含所有有效裂缝属性的列表。
+        """
+        # 反转图像颜色，使裂缝（黑色）变为白色，背景（白色）变为黑色
+        inverted_image = cv2.bitwise_not(binary_image)
+
+        # 步骤1: 轮廓初筛
+        contours, _ = cv2.findContours(inverted_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        valid_fractures: List[FractureProperties] = []
+        
+        for contour in contours:
+            # 步骤2: 特征提取与过滤
+            if len(contour) < 5:  # minAreaRect 需要至少5个点
+                continue
+
+            rect = cv2.minAreaRect(contour)
+            (center, (width, height), angle) = rect
+            
+            if width == 0 or height == 0:
+                continue
+            
+            aspect_ratio = max(width, height) / min(width, height)
+            
+            if aspect_ratio >= min_aspect_ratio:
+                area_pixels = cv2.contourArea(contour)
+
+                # 步骤3: 精确测量
+                mask = np.zeros(binary_image.shape, dtype=np.uint8)
+                cv2.drawContours(mask, [contour], -1, 255, thickness=cv2.FILLED)
+                skeleton = skeletonize(mask > 0)
+                length_pixels = np.sum(skeleton)
+                
+                fracture_props: FractureProperties = {
+                    'contour': contour,
+                    'area_pixels': area_pixels,
+                    'length_pixels': length_pixels,
+                    'angle': angle,
+                    'centroid_pixels': center,
+                }
+                valid_fractures.append(fracture_props)
+                
+        return valid_fractures
+
+    def draw_analysis_results(
+        self, 
+        original_image: np.ndarray, 
+        fractures: List[FractureProperties]
+    ) -> np.ndarray:
+        """在图像上绘制检测到的裂缝轮廓。
+
+        Args:
+            original_image (np.ndarray): 要绘制的原始图像。
+            fractures (List[FractureProperties]): 裂缝属性列表。
+
+        Returns:
+            np.ndarray: 带有高亮裂缝轮廓的新图像。
+        """
+        result_image = original_image.copy()
+        
+        # 确保图像是彩色的，以便绘制彩色轮廓
+        if len(result_image.shape) == 2 or result_image.shape[2] == 1:
+            result_image = cv2.cvtColor(result_image, cv2.COLOR_GRAY2BGR)
+
+        # 绘制所有有效裂缝的轮廓
+        contours_to_draw = [fracture['contour'] for fracture in fractures]
+        cv2.drawContours(result_image, contours_to_draw, -1, (0, 0, 255), 2)  # 红色轮廓
+        
+        return result_image 

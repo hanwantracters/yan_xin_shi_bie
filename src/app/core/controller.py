@@ -5,15 +5,20 @@
 
 """
 
+from PyQt5.QtCore import QObject, pyqtSignal
+
 from .image_processor import ImageProcessor
 from .unit_converter import UnitConverter
 from .analysis_stages import AnalysisStage
 
-class Controller:
+class Controller(QObject):
     """应用程序控制器类，协调UI和业务逻辑。"""
     
+    analysis_complete = pyqtSignal(dict)
+
     def __init__(self):
         """初始化控制器。"""
+        super().__init__()
         self.image_processor = ImageProcessor()
         self.unit_converter = UnitConverter()
         self.current_image = None
@@ -181,6 +186,70 @@ class Controller:
         self.save_analysis_result(AnalysisStage.MORPHOLOGY, result)
         return result
     
+    def run_fracture_analysis(self, min_aspect_ratio: float):
+        """驱动完整的裂缝分析流程。
+        
+        Args:
+            min_aspect_ratio (float): 用于过滤噪声的最小长宽比。
+        """
+        # 1. 检查DPI和形态学结果是否就绪
+        if self.current_dpi is None:
+            print("错误：无法进行分析，缺少DPI信息。")
+            # 可以在此发射一个错误信号
+            return
+
+        morphology_result = self.get_analysis_result(AnalysisStage.MORPHOLOGY)
+        if not morphology_result or 'image' not in morphology_result:
+            print("错误：无法进行分析，缺少形态学处理结果。")
+            # 可以先尝试运行
+            morphology_result = self.apply_morphological_processing()
+            if not morphology_result:
+                print("错误：形态学处理失败。")
+                return
+
+        binary_image = morphology_result['image']
+
+        # 2. 调用核心分析算法
+        fractures_pixels = self.image_processor.analyze_fractures(
+            binary_image, 
+            min_aspect_ratio=min_aspect_ratio
+        )
+        
+        # 3. 单位转换
+        measurement_details = []
+        dpi = self.current_dpi[0]
+        for fracture in fractures_pixels:
+            area_mm2 = self.unit_converter.convert_area(fracture['area_pixels'], dpi)
+            length_mm = self.unit_converter.pixels_to_mm(fracture['length_pixels'], dpi)
+            measurement_details.append({
+                'area_mm2': round(area_mm2, 4),
+                'length_mm': round(length_mm, 4),
+                'angle': round(fracture['angle'], 2),
+            })
+
+        # 4. 保存详细测量数据
+        measurement_summary = {
+            'count': len(measurement_details),
+            'total_area_mm2': round(sum(item['area_mm2'] for item in measurement_details), 4),
+            'total_length_mm': round(sum(item['length_mm'] for item in measurement_details), 4),
+            'details': measurement_details
+        }
+        self.save_analysis_result(AnalysisStage.MEASUREMENT, measurement_summary)
+
+        # 5. 创建并保存可视化结果图像
+        original_image_data = self.get_analysis_result(AnalysisStage.ORIGINAL)
+        visualized_image = self.image_processor.draw_analysis_results(
+            original_image_data['image'],
+            fractures_pixels
+        )
+        self.save_analysis_result(AnalysisStage.DETECTION, {
+            'image': visualized_image,
+            'fracture_count': len(fractures_pixels)
+        })
+
+        # 6. 发射完成信号
+        self.analysis_complete.emit(self.get_all_analysis_results())
+
     def save_analysis_result(self, stage, result_data):
         """保存分析阶段的结果。
         
