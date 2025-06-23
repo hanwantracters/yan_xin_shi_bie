@@ -149,23 +149,29 @@ class TestImageProcessor(unittest.TestCase):
 
     def test_apply_morphological_postprocessing_new_strategies_callable(self):
         """测试新的形态学策略(area_based, strong)是否可调用。"""
-        # 测试 area_based opening
+        # [FIX] 更新参数结构以匹配新的函数签名
         area_params = {
             'opening_strategy': 'area_based',
-            'params': {'area_based_opening': {'min_area': 50}}
+            'params': {
+                'opening': {'min_area': 50, 'kernel_size': 3} # kernel_size > 0 才会触发
+            }
         }
         area_result = self.image_processor.apply_morphological_postprocessing(self.binary_test_image, **area_params)
-        self.assertIn('image', area_result)
-        self.assertEqual(area_result['image'].shape, self.binary_test_image.shape)
+        # [FIX] 更新期望的返回键名 'image' -> 'binary'
+        self.assertIn('binary', area_result)
+        self.assertEqual(area_result['binary'].shape, self.binary_test_image.shape)
 
-        # 测试 strong closing
+        # [FIX] 更新参数结构和期望的返回键名
+        # "strong" 策略已在重构中移除，此处改为测试一个有效的标准闭运算
         strong_params = {
-            'closing_strategy': 'strong',
-            'params': {'strong_closing': {'kernel_size': (7,7), 'iterations': 3}}
+            'closing_strategy': 'standard',
+            'params': {
+                'closing': {'kernel_size': 7, 'iterations': 3}
+            }
         }
         strong_result = self.image_processor.apply_morphological_postprocessing(self.binary_test_image, **strong_params)
-        self.assertIn('image', strong_result)
-        self.assertEqual(strong_result['image'].shape, self.binary_test_image.shape)
+        self.assertIn('binary', strong_result)
+        self.assertEqual(strong_result['binary'].shape, self.binary_test_image.shape)
 
     def test_merge_fractures_callable(self):
         """测试merge_fractures存根函数是否可调用。"""
@@ -198,6 +204,59 @@ class TestImageProcessor(unittest.TestCase):
             output_path = str(self.output_dir / output_name)
             cv2.imwrite(output_path, processed_image)
             print(f"图片 {image_name} 处理后的结果已保存到: {output_path}")
+
+    def test_morphological_operations_logic(self):
+        """测试形态学开运算和闭运算的逻辑是否正确。
+        
+        开运算应该移除小的黑色物体（噪点）。
+        闭运算应该填充黑色物体内部的小孔洞。
+        """
+        # 1. 准备一个专门的测试图像（黑底白字的反转模式）
+        # 背景为白色 (255)，前景裂缝为黑色 (0)
+        test_image = np.full((30, 30), 255, dtype=np.uint8)
+        # 添加一个 2x2 的黑色噪点
+        test_image[3:5, 3:5] = 0
+        # 添加一个 10x10 的主裂缝
+        test_image[10:20, 10:20] = 0
+        # 在主裂缝中添加一个 2x2 的白色孔洞
+        test_image[14:16, 14:16] = 255
+
+        # 2. 测试开运算（去噪）
+        # 开运算的核应该足够大以移除噪点，但又不能大到移除主裂缝
+        opening_params = {
+            'opening_strategy': 'standard',
+            'closing_strategy': 'standard', # 不影响本次测试
+            'params': {
+                'opening': {'kernel_size': 3, 'iterations': 1},
+                'closing': {'kernel_size': 0} # 关闭闭运算
+            }
+        }
+        result_opening = self.image_processor.apply_morphological_postprocessing(test_image.copy(), **opening_params)
+        opened_image = result_opening['binary']
+
+        # 验证：噪点应该被移除（变回白色）
+        self.assertEqual(opened_image[3, 3], 255, "开运算后，噪点区域应变为白色")
+        # 验证：主裂缝应该被保留（保持黑色）
+        self.assertEqual(opened_image[11, 11], 0, "开运算后，主裂缝区域应保持黑色")
+        # 验证：孔洞应该不受影响
+        self.assertEqual(opened_image[15, 15], 255, "开运算不应影响主裂缝内部的孔洞")
+
+        # 3. 测试闭运算（填充孔洞）
+        closing_params = {
+            'opening_strategy': 'standard', # 不影响本次测试
+            'closing_strategy': 'standard',
+            'params': {
+                'opening': {'kernel_size': 0}, # 关闭开运算
+                'closing': {'kernel_size': 3, 'iterations': 1}
+            }
+        }
+        result_closing = self.image_processor.apply_morphological_postprocessing(test_image.copy(), **closing_params)
+        closed_image = result_closing['binary']
+
+        # 验证：孔洞应该被填充（变为黑色）
+        self.assertEqual(closed_image[15, 15], 0, "闭运算后，孔洞区域应被填充为黑色")
+        # 验证：噪点应该不受影响
+        self.assertEqual(closed_image[3, 3], 0, "闭运算不应影响外部噪点")
 
 
 if __name__ == "__main__":

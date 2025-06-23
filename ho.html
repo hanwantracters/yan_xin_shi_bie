@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>开运算 (Opening) 示例</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+            line-height: 1.6;
+            color: #333;
+            background-color: #fdfdfd;
+            padding: 20px;
+        }
+        h2, h3 {
+            border-bottom: 2px solid #eaecef;
+            padding-bottom: 0.3em;
+            color: #0366d6;
+        }
+        pre {
+            background-color: #f6f8fa;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: "Courier New", Courier, monospace;
+            font-size: 1.2em;
+            line-height: 1.2;
+            white-space: pre;
+            display: inline-block;
+            border: 1px solid #ddd;
+        }
+        .pixel-b {
+            color: #000000;
+            font-weight: bold;
+        }
+        .pixel-w {
+            color: #cccccc;
+        }
+        .container {
+            max-width: 800px;
+            margin: auto;
+        }
+        .example {
+            margin-bottom: 40px;
+            padding: 20px;
+            border: 1px solid #e1e4e8;
+            border-radius: 8px;
+        }
+        .step {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>开运算 (Opening) 的更多示例</h2>
+        <p>
+            开运算的核心是 <strong>先腐蚀，后膨胀</strong>。我们将使用一个标准的 <strong>3x3正方形核</strong> 来演示其效果。
+            在这里，<span class="pixel-b">b</span> 代表物体像素（黑色），<span class="pixel-w">w</span> 代表背景像素（白色）。
+        </p>
+
+        <div class="example">
+            <h3>示例 1: 消除背景噪声</h3>
+            <p>开运算最常见的用途是清除小的、孤立的背景噪声点，同时基本保持主要物体的形状和大小。</p>
+
+            <div class="step">
+                <h4>原始图像</h4>
+                <p>一个主要物体周围散布着一些小的噪声点。</p>
+                <pre><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span></pre>
+            </div>
+
+            <div class="step">
+                <h4>第一步: 腐蚀</h4>
+                <p>小的孤立点因为其3x3邻域不全是<span class="pixel-b">b</span>，所以被完全清除。主要物体也被腐蚀，向内收缩了一圈。</p>
+                <pre><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span></pre>
+            </div>
+
+            <div class="step">
+                <h4>第二步: 膨胀 (最终结果)</h4>
+                <p>在腐蚀后的图像上进行膨胀。被腐蚀掉的噪声点无法恢复。而主要物体则膨胀回接近其原始大小。</p>
+                <pre><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span></pre>
+            </div>
+        </div>
+
+        <div class="example">
+            <h3>示例 2: 断开细微的连接</h3>
+            <p>开运算可以断开两个物体之间狭窄的连接桥，从而将它们分离。</p>
+
+            <div class="step">
+                <h4>原始图像</h4>
+                <p>两个方块由一个仅1像素宽的桥连接。</p>
+                <pre><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span></pre>
+            </div>
+
+            <div class="step">
+                <h4>第一步: 腐蚀</h4>
+                <p>细长的连接桥因为太窄，被完全腐蚀掉了。两个方块也各自收缩。</p>
+                <pre><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span></pre>
+            </div>
+
+            <div class="step">
+                <h4>第二步: 膨胀 (最终结果)</h4>
+                <p>两个分离的物体各自膨胀，但因为连接桥已经消失，它们无法再重新连接起来。</p>
+                <pre><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-b">b</span><span class="pixel-b">b</span><span class="pixel-w">w</span>
+<span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span><span class="pixel-w">w</span></pre>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

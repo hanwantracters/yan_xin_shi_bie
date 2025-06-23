@@ -118,6 +118,10 @@ class AnalysisPreviewWindow(QMainWindow):
             result_data (dict): 包含该阶段结果的完整字典。
         """
         print(f"[AnalysisPreviewWindow] Updating preview for stage: {stage.name}")
+        
+        # DEBUG: 打印阶段的结果数据键
+        print(f"[DEBUG] {stage.name} result_data keys: {list(result_data.keys() if result_data else [])}")
+        
         if stage not in self.preview_panels:
             return
 
@@ -127,8 +131,12 @@ class AnalysisPreviewWindow(QMainWindow):
         image = None
         if 'image' in result_data:
             image = result_data['image']
+            print(f"[DEBUG] {stage.name} has 'image' data: {type(image)}, shape: {getattr(image, 'shape', 'unknown')}")
         elif 'binary' in result_data:
             image = result_data['binary']
+            print(f"[DEBUG] {stage.name} has 'binary' data: {type(image)}, shape: {getattr(image, 'shape', 'unknown')}")
+        else:
+            print(f"[DEBUG] {stage.name} has no image data")
         
         if image is not None:
             panel.preview.display_image(image)
@@ -161,14 +169,29 @@ class AnalysisPreviewWindow(QMainWindow):
 
         param_lines = []
 
+        # DEBUG: 打印格式化参数的输入
+        print(f"[DEBUG] Formatting parameters for stage: {stage.name}")
+        print(f"[DEBUG] result_data type: {type(result_data)}")
+
         # 特殊处理测量阶段，只显示摘要
         if stage == AnalysisStage.MEASUREMENT:
-            param_lines.append(f"裂缝数量: {result_data.get('count', 'N/A')}")
+            param_lines.append(f"裂缝数量: {result_data.get('fracture_count', result_data.get('count', 'N/A'))}")
             param_lines.append(f"总面积 (mm²): {result_data.get('total_area_mm2', 'N/A')}")
             param_lines.append(f"总长度 (mm): {result_data.get('total_length_mm', 'N/A')}")
-            if result_data.get('details'):
+            if result_data.get('details') or result_data.get('detailed_fractures'):
                  param_lines.append(f"\n详情请在主面板查看。")
             return "\n".join(param_lines)
+        
+        # 特殊处理检测阶段，显示裂缝统计信息
+        if stage == AnalysisStage.DETECTION:
+            if 'fractures' in result_data:
+                fractures = result_data.get('fractures', [])
+                param_lines.append(f"检测到的裂缝数量: {len(fractures)}")
+                if len(fractures) > 0:
+                    param_lines.append(f"裂缝详细信息请在主面板查看。")
+                else:
+                    param_lines.append("未检测到任何裂缝。")
+                return "\n".join(param_lines)
 
         # 通用格式化逻辑
         def format_dict(d, indent=0):

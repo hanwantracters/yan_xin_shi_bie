@@ -252,29 +252,45 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"参数已保存至 {filepath}。")
 
     def _on_analysis_complete(self, results: dict):
-        """分析完成处理函数。"""
-        self.statusBar().showMessage("分析完成。", 5000)
+        """分析完成处理函数。
         
-        # 更新结果面板
-        measurement_result = results.get(AnalysisStage.MEASUREMENT)
-        if measurement_result:
-            self.result_panel.update_analysis_results(measurement_result)
-            
-        # 更新预览窗口为最终的可视化结果
-        detection_result = results.get(AnalysisStage.DETECTION)
-        if detection_result:
-            self.preview_window.display_image(detection_result.get('image'))
-        
-        # 分析完成后，用最终结果刷新一次所有预览标签页
-        self._update_all_analysis_previews()
-        
-    def _on_preview_stage_updated(self, stage: AnalysisStage, result_data: dict):
-        """响应控制器发出的单个阶段预览更新信号。"""
-        print(f"[MainWindow] Slot _on_preview_stage_updated received signal for stage: {stage.name}")
-        self.analysis_preview_window.update_stage_preview(stage, result_data)
+        Args:
+            results (dict): 分析结果，包括裂缝数量、总面积、总长度等。
+        """
+        self.statusBar().showMessage("裂缝分析完成。")
+        self.result_panel.update_analysis_results(results)
 
+    def _on_preview_stage_updated(self, stage: AnalysisStage, result_data: dict):
+        """预览阶段更新处理函数。
+        
+        Args:
+            stage (AnalysisStage): 当前分析阶段。
+            result_data (dict): 包含图像或数据的字典。
+        """
+        # 1. 更新多阶段预览窗口
+        # 特殊处理：当是MEASUREMENT阶段时，我们希望显示最终的DETECTION图像
+        if stage == AnalysisStage.MEASUREMENT:
+            # 从控制器获取DETECTION阶段的结果，里面包含图像
+            detection_result = self.controller.analysis_results.get(AnalysisStage.DETECTION, {})
+            display_image = detection_result.get("image")
+            
+            # 创建一个新的字典，合并DETECTION图像和MEASUREMENT的统计数据
+            combined_data = result_data.copy()
+            if display_image is not None:
+                combined_data['image'] = display_image
+            
+            self.analysis_preview_window.update_stage_preview(stage, combined_data)
+        else:
+            # 对于其他所有阶段，直接传递收到的结果字典
+            self.analysis_preview_window.update_stage_preview(stage, result_data)
+
+        # 2. 如果是最终检测阶段，也更新主预览窗口
+        image = result_data.get("image")
+        if stage == AnalysisStage.DETECTION and image is not None:
+            self.preview_window.update_image(image)
+        
     def _on_error_occurred(self, message: str):
-        """处理并显示来自控制器的错误信息。"""
+        """错误处理函数。"""
         QMessageBox.warning(self, "错误", message)
         self.statusBar().showMessage(f"操作失败: {message}", 5000)
 

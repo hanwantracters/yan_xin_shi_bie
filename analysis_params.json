@@ -4,27 +4,27 @@
         "threshold": {
             "method": "sauvola",
             "global_value": 127,
-            "adaptive_block_size": 11,
+            "adaptive_block_size": 3,
             "adaptive_c_value": 2,
-            "niblack_window_size": 25,
+            "niblack_window_size": 3,
             "niblack_k": -0.2,
-            "sauvola_window_size": 17,
+            "sauvola_window_size": 73,
             "sauvola_k": 0.2,
-            "sauvola_r": 128
+            "sauvola_r": 255
         },
         "morphology": {
-            "open_kernel_size": 1,
+            "open_kernel_size": 3,
             "open_iterations": 1,
-            "close_kernel_size": 3,
-            "close_iterations": 1
+            "close_kernel_size": 20,
+            "close_iterations": 2
         },
         "filtering": {
-            "min_length_mm": 20.0,
+            "min_length_mm": 100.0,
             "min_aspect_ratio": 3.0
         },
         "merging": {
             "enabled": true,
-            "merge_distance_mm": 2.0,
+            "merge_distance_mm": 20.0,
             "max_angle_diff": 15.0
         }
     }

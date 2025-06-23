@@ -322,9 +322,8 @@ class ImageProcessor:
             opening_strategy (str): 去噪策略, 'standard' 或 'area_based'。
             closing_strategy (str): 连接策略, 'standard' 或 'strong'。
             params (dict): 不同策略所需的参数字典。
-                - 'standard': {'kernel_shape': str, 'kernel_size': tuple, 'iterations': int}
-                - 'area_based': {'min_area': int}
-                - 'strong': {'kernel_shape': str, 'kernel_size': tuple, 'iterations': int}
+                - 'opening': {'kernel_size': int, 'kernel_shape': str, 'iterations': int, 'min_area': int}
+                - 'closing': {'kernel_size': int, 'kernel_shape': str, 'iterations': int}
 
         Returns:
             dict: 包含处理后图像及相关参数的字典。
@@ -334,41 +333,44 @@ class ImageProcessor:
 
         processed_image = binary_image.copy()
 
+        # 解包参数
+        opening_params = params.get('opening', {})
+        opening_ksize = opening_params.get('kernel_size', 0)
+        opening_kshape = opening_params.get('kernel_shape', 'rect')
+        
+        closing_params = params.get('closing', {})
+        closing_ksize = closing_params.get('kernel_size', 0)
+        closing_kshape = closing_params.get('kernel_shape', 'rect')
+
         # Step 1: Opening
         if opening_ksize > 0:
-            kernel = self.create_morphology_kernel(opening_kshape, (opening_ksize, opening_ksize))
             if opening_strategy == 'standard':
-                iterations = params.get('opening_iterations', 1)
-                # [FIX] 反转图像，使裂缝（前景）为白色，背景为黑色
+                kernel = self.create_morphology_kernel(opening_kshape, (opening_ksize, opening_ksize))
+                iterations = opening_params.get('iterations', 1)
+                # 正确逻辑：反转 -> 开运算 -> 反转
                 inverted_image = cv2.bitwise_not(processed_image)
-                # 对白色前景执行开运算以移除噪点
                 opened_inverted = cv2.morphologyEx(inverted_image, cv2.MORPH_OPEN, kernel, iterations=iterations)
-                # [FIX] 将图像反转回来
                 processed_image = cv2.bitwise_not(opened_inverted)
             elif opening_strategy == 'area_based':
-                min_area = params.get('min_area', 100)
-                # 反转图像，使噪声成为白色前景
-                processed_image = cv2.bitwise_not(self._remove_small_noise_by_area(processed_image, min_area))
+                min_area = opening_params.get('min_area', 100)
+                # 正确逻辑：反转 -> 移除小面积对象 -> 反转
+                inverted_image = cv2.bitwise_not(processed_image)
+                denoised_inverted = self._remove_small_noise_by_area(inverted_image, min_area)
+                processed_image = cv2.bitwise_not(denoised_inverted)
 
         # Step 2: Closing
         if closing_ksize > 0:
             kernel = self.create_morphology_kernel(closing_kshape, (closing_ksize, closing_ksize))
-            iterations = params.get('closing_iterations', 1)
-            # [FIX] 反转图像，使裂缝（前景）为白色
+            iterations = closing_params.get('iterations', 1)
+            # 正确逻辑：反转 -> 闭运算 -> 反转
             inverted_image = cv2.bitwise_not(processed_image)
-            # 对白色前景执行闭运算以连接裂缝
             closed_inverted = cv2.morphologyEx(inverted_image, cv2.MORPH_CLOSE, kernel, iterations=iterations)
-            # [FIX] 将图像反转回来
             processed_image = cv2.bitwise_not(closed_inverted)
 
-        result = {
-            'image': processed_image,
-            'opening_strategy': opening_strategy,
-            'closing_strategy': closing_strategy,
+        return {
+            'binary': processed_image,
             'params': params
         }
-        
-        return result 
 
     def analyze_fractures(
         self, 
@@ -386,15 +388,21 @@ class ImageProcessor:
         Returns:
             List[FractureProperties]: 一个包含所有有效裂缝属性的列表。
         """
+        # DEBUG: 记录输入参数
+        print(f"[DEBUG] analyze_fractures called with:")
+        print(f"  - min_aspect_ratio: {min_aspect_ratio}")
+        print(f"  - min_length_pixels: {min_length_pixels}")
+        
         # 反转图像颜色，使裂缝（黑色）变为白色，背景（白色）变为黑色
         inverted_image = cv2.bitwise_not(binary_image)
 
         # 步骤1: 轮廓初筛
         contours, _ = cv2.findContours(inverted_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        print(f"[DEBUG] Found {len(contours)} contours in initial detection")
         
         valid_fractures: List[FractureProperties] = []
         
-        for contour in contours:
+        for i, contour in enumerate(contours):
             # 步骤2: 特征提取与过滤
             if len(contour) < 5:  # minAreaRect 需要至少5个点
                 continue
@@ -407,6 +415,10 @@ class ImageProcessor:
             
             aspect_ratio = max(width, height) / min(width, height)
             
+            # DEBUG: 记录关键轮廓信息
+            if i < 10 or i % 50 == 0:  # 只打印前10个和之后每50个，避免太多输出
+                print(f"[DEBUG] Contour {i}: width={width:.1f}, height={height:.1f}, aspect_ratio={aspect_ratio:.1f}")
+            
             if aspect_ratio >= min_aspect_ratio:
                 area_pixels = cv2.contourArea(contour)
 
@@ -418,6 +430,7 @@ class ImageProcessor:
                 
                 # 新增：根据最小长度进行过滤
                 if length_pixels < min_length_pixels:
+                    print(f"[DEBUG] Filtered out contour due to length: {length_pixels} < {min_length_pixels}")
                     continue
 
                 fracture_props: FractureProperties = {
@@ -428,7 +441,8 @@ class ImageProcessor:
                     'centroid_pixels': center,
                 }
                 valid_fractures.append(fracture_props)
-                
+        
+        print(f"[DEBUG] Final valid fractures count: {len(valid_fractures)}")
         return valid_fractures
 
     def merge_fractures(

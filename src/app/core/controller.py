@@ -201,6 +201,25 @@ class Controller(QObject):
             self.error_occurred.emit(error_msg)
             print(error_msg)
 
+    def _get_formatted_morphology_params(self) -> dict:
+        """从主参数字典中读取形态学参数并将其格式化为处理函数所需的结构。"""
+        morph_p = self.analysis_params['analysis_parameters'].get('morphology', {})
+        
+        # 这个结构必须与 image_processor.apply_morphological_postprocessing 的期望相符
+        return {
+            'opening': {
+                'kernel_size': morph_p.get('open_kernel_size', 0),
+                'kernel_shape': morph_p.get('open_kernel_shape', 'rect'),
+                'iterations': morph_p.get('open_iterations', 1),
+                'min_area': morph_p.get('min_area', 100)
+            },
+            'closing': {
+                'kernel_size': morph_p.get('close_kernel_size', 0),
+                'kernel_shape': morph_p.get('close_kernel_shape', 'rect'),
+                'iterations': morph_p.get('close_iterations', 1)
+            }
+        }
+
     def on_morphology_params_changed(self):
         """根据当前的参数状态，重新应用形态学处理。"""
         print(f"[Controller] Slot on_morphology_params_changed called.")
@@ -211,24 +230,14 @@ class Controller(QObject):
             return # 依赖的阈值结果不存在
 
         try:
-            params = self.analysis_params['analysis_parameters']['morphology']
+            # [REFACTOR] 使用统一的参数格式化方法
+            processing_params = self._get_formatted_morphology_params()
             binary_image = threshold_result['binary']
             
-            # 构造传递给 image_processor 的参数
-            processing_params = {
-                "standard_opening": {
-                    'kernel_size': (params['open_kernel_size'], params['open_kernel_size']),
-                    'iterations': params['open_iterations']
-                },
-                "standard_closing": {
-                    'kernel_size': (params['close_kernel_size'], params['close_kernel_size']),
-                    'iterations': params['close_iterations']
-                }
-            }
-
             result = self.image_processor.apply_morphological_postprocessing(
                 binary_image,
-                opening_strategy="standard", # 假设目前只用标准方法
+                # opening_strategy 和 closing_strategy 理论上也可以来自参数
+                opening_strategy="standard", 
                 closing_strategy="standard",
                 params=processing_params
             )
@@ -253,88 +262,132 @@ class Controller(QObject):
         return self.current_dpi
         
     def run_fracture_analysis(self):
-        """驱动完整的裂缝分析流程，使用存储的参数。"""
-        if self.current_dpi is None:
-            self.error_occurred.emit("无法分析：缺少DPI信息。")
+        """
+        [REFACTORED] 执行一个完整的、自包含的裂缝分析流水线。
+        
+        该方法从头开始执行所有处理步骤，不依赖于任何预先存在的预览结果。
+        它将按顺序执行阈值分割、形态学处理、裂缝分析、合并和最终计算，
+        并在每个关键阶段保存结果并更新UI预览。
+        """
+        if self.current_image is None:
+            self.error_occurred.emit("没有加载图像，无法开始分析。")
             return
 
-        morphology_result = self.get_analysis_result(AnalysisStage.MORPHOLOGY)
-        if not morphology_result or 'image' not in morphology_result:
-            self.error_occurred.emit("无法分析：缺少形态学处理结果。")
-            return
+        try:
+            # --- 前置检查: 确保DPI信息可用 ---
+            if not self.current_dpi or self.current_dpi[0] <= 0:
+                raise ValueError("无法进行单位换算：DPI信息无效或为0。")
+            dpi = self.current_dpi[0]  # 假设x和y的DPI相同
 
-        binary_image = morphology_result['image']
-        
-        # 从 self.analysis_params 获取所有参数
-        params = self.analysis_params['analysis_parameters']
-        filtering_params = params['filtering']
-        merging_params = params['merging']
-
-        min_aspect_ratio = filtering_params['min_aspect_ratio']
-        min_length_mm = filtering_params['min_length_mm']
-
-        # 将最小长度从毫米转换为像素
-        dpi = self.current_dpi[0] if self.current_dpi else 0
-        if dpi == 0:
-            self.error_occurred.emit("无法进行长度过滤：DPI为0或无效。")
-            min_length_pixels = 0
-        else:
-            min_length_pixels = self.unit_converter.mm_to_pixels(min_length_mm, dpi)
-
-        fractures_pixels = self.image_processor.analyze_fractures(
-            binary_image, 
-            min_aspect_ratio=min_aspect_ratio,
-            min_length_pixels=min_length_pixels
-        )
-        
-        # (可选) 智能合并轮廓
-        if merging_params['enabled']:
-            # 注意：这里的参数键需要与 image_processor.merge_fractures 的预期匹配
-            # 假设它需要 merge_distance_pixels
-            merge_distance_pixels = self.unit_converter.mm_to_pixels(merging_params['merge_distance_mm'], dpi)
-            max_angle_diff = merging_params['max_angle_diff']
+            # --- 步骤 1: 阈值分割 ---
+            print("[Pipeline] Running Step 1: Thresholding")
+            thresh_params_flat = self.analysis_params['analysis_parameters']['threshold']
+            method = thresh_params_flat['method']
             
-            fractures_pixels = self.image_processor.merge_fractures(
-                fractures_pixels,
-                max_distance=merge_distance_pixels,
-                max_angle_diff=max_angle_diff
+            thresh_params_structured = {}
+            if method == 'global':
+                thresh_params_structured = {'value': thresh_params_flat['global_value']}
+            elif method == 'adaptive_gaussian':
+                thresh_params_structured = {'block_size': thresh_params_flat['adaptive_block_size'], 'c': thresh_params_flat['adaptive_c_value']}
+            elif method == 'niblack':
+                thresh_params_structured = {'window_size': thresh_params_flat['niblack_window_size'], 'k': thresh_params_flat['niblack_k']}
+            elif method == 'sauvola':
+                thresh_params_structured = {
+                    'window_size': thresh_params_flat['sauvola_window_size'], 
+                    'k': thresh_params_flat['sauvola_k'], 
+                    'r': thresh_params_flat['sauvola_r']
+                }
+
+            threshold_result = self.image_processor.apply_threshold(
+                self.current_image, method=method, params=thresh_params_structured
             )
-        
-        # 单位转换
-        if not self.current_dpi or self.current_dpi[0] == 0:
-            self.error_occurred.emit("无法计算物理尺寸：DPI为0或无效。")
-            return
+            self.save_analysis_result(AnalysisStage.THRESHOLD, threshold_result)
+            self.preview_stage_updated.emit(AnalysisStage.THRESHOLD, threshold_result)
             
-        dpi = self.current_dpi[0]
-        measurement_details = []
-        for fracture in fractures_pixels:
-            area_mm2 = self.unit_converter.convert_area(fracture['area_pixels'], dpi)
-            length_mm = self.unit_converter.pixels_to_mm(fracture['length_pixels'], dpi)
-            measurement_details.append({
-                'area_mm2': round(area_mm2, 4),
-                'length_mm': round(length_mm, 4),
-                'angle': round(fracture['angle'], 2),
-            })
+            # --- 步骤 2: 形态学处理 ---
+            print("[Pipeline] Running Step 2: Morphological Post-processing")
+            binary_image = threshold_result['binary']
+            morphology_params = self._get_formatted_morphology_params()
+            
+            morphology_result = self.image_processor.apply_morphological_postprocessing(
+                binary_image,
+                opening_strategy="standard",
+                closing_strategy="standard",
+                params=morphology_params
+            )
+            self.save_analysis_result(AnalysisStage.MORPHOLOGY, morphology_result)
+            self.preview_stage_updated.emit(AnalysisStage.MORPHOLOGY, morphology_result)
+            
+            processed_binary_image = morphology_result['binary']
 
-        measurement_summary = {
-            'count': len(measurement_details),
-            'total_area_mm2': round(sum(item['area_mm2'] for item in measurement_details), 4),
-            'total_length_mm': round(sum(item['length_mm'] for item in measurement_details), 4),
-            'details': measurement_details
-        }
-        self.save_analysis_result(AnalysisStage.MEASUREMENT, measurement_summary)
+            # --- 步骤 3: 裂缝过滤与分析 ---
+            print("[Pipeline] Running Step 3: Fracture Analysis")
+            filtering_params = self.analysis_params['analysis_parameters'].get('filtering', {})
+            min_length_pixels = self.unit_converter.mm_to_pixels(
+                filtering_params.get('min_length_mm', 0), dpi
+            )
 
-        original_image_data = self.get_analysis_result(AnalysisStage.ORIGINAL)
-        visualized_image = self.image_processor.draw_analysis_results(
-            original_image_data['image'],
-            fractures_pixels
-        )
-        self.save_analysis_result(AnalysisStage.DETECTION, {
-            'image': visualized_image,
-            'fracture_count': len(fractures_pixels)
-        })
+            valid_fractures = self.image_processor.analyze_fractures(
+                processed_binary_image,
+                min_aspect_ratio=filtering_params.get('min_aspect_ratio', 3.0),
+                min_length_pixels=min_length_pixels
+            )
 
-        self.analysis_complete.emit(self.get_all_analysis_results())
+            # --- 步骤 4: (可选) 轮廓合并 ---
+            merging_params = self.analysis_params['analysis_parameters'].get('merging', {})
+            if merging_params.get('enabled', False):
+                print("[Pipeline] Running Step 4: Merging Fractures")
+                merge_distance_pixels = self.unit_converter.mm_to_pixels(
+                    merging_params.get('merge_distance_mm', 0), dpi
+                )
+                valid_fractures = self.image_processor.merge_fractures(
+                    valid_fractures,
+                    max_distance=merge_distance_pixels,
+                    max_angle_diff=15.0  # 暂时硬编码
+                )
+
+            # --- 步骤 5: 结果可视化 ---
+            print("[Pipeline] Running Step 5: Visualizing Results")
+            detection_image = self.image_processor.draw_analysis_results(self.current_image, valid_fractures)
+            detection_result = {'image': detection_image, 'fractures': valid_fractures}
+            self.save_analysis_result(AnalysisStage.DETECTION, detection_result)
+            self.preview_stage_updated.emit(AnalysisStage.DETECTION, detection_result)
+
+            # --- 步骤 6: 定量计算 ---
+            print("[Pipeline] Running Step 6: Quantitative Measurement")
+            total_area_pixels = sum(f['area_pixels'] for f in valid_fractures)
+            total_length_pixels = sum(f['length_pixels'] for f in valid_fractures)
+            
+            measurement_result = {
+                'fracture_count': len(valid_fractures),
+                'total_area_mm2': self.unit_converter.convert_area(total_area_pixels, dpi),
+                'total_length_mm': self.unit_converter.pixels_to_mm(total_length_pixels, dpi),
+                'detailed_fractures': [
+                    {
+                        'id': i + 1,
+                        'length_mm': self.unit_converter.pixels_to_mm(f['length_pixels'], dpi),
+                        'area_mm2': self.unit_converter.convert_area(f['area_pixels'], dpi),
+                        'angle_degrees': f['angle']
+                    }
+                    for i, f in enumerate(valid_fractures)
+                ]
+            }
+            
+            # DEBUG: 打印测量结果的内容
+            print("[DEBUG] Measurement result:")
+            print(f"  - fracture_count: {measurement_result['fracture_count']}")
+            print(f"  - total_area_mm2: {measurement_result['total_area_mm2']}")
+            print(f"  - total_length_mm: {measurement_result['total_length_mm']}")
+            print(f"  - valid_fractures count: {len(valid_fractures)}")
+            
+            self.save_analysis_result(AnalysisStage.MEASUREMENT, measurement_result)
+            self.analysis_complete.emit(measurement_result)
+            print("[Pipeline] Analysis finished successfully.")
+
+        except Exception as e:
+            error_msg = f"分析流程执行失败: {e}"
+            self.error_occurred.emit(error_msg)
+            print(error_msg)
 
     def save_analysis_result(self, stage, result_data):
         """保存指定分析阶段的结果。"""
