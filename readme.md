@@ -12,11 +12,12 @@
     - **精细形态学控制**: 用户可通过独立对话框微调开/闭运算的核大小、形状及迭代次数。
     - **智能轮廓过滤**: 可根据物理单位（如最小长度mm）和几何形态（如最小长宽比）对检测到的轮廓进行精确过滤。
     - **智能轮廓合并**: (待实现) 可选的智能合并功能，用于连接邻近的断裂轮廓。
-- **实时参数调优与预览**:
-    - 任何参数（如阈值、形态学）的调整都会**实时**反映在多阶段预览窗口中。
-    - 用户可以并排查看原始图像、灰度图、二值化图和形态学处理后的效果，直观地理解每个参数的作用。
+- **状态驱动的实时预览**:
+    - 任何参数调整都会触发一次完整的分析预览。
+    - UI能够智能地展示当前分析状态：如"加载中"、"未检测到结果"或"就绪"。
+    - 当分析就绪时，用户可以在一个多标签页视图中，清晰地查看原始图像、灰度图、二值化图、形态学处理后以及最终标记的**所有**中间阶段结果。
 - **参数化定量分析**:
-    - **模块化参数面板**: 将复杂的参数设置移至独立的对话框中（二值化、形态学、过滤与合并），保持主界面整洁。
+    - **模块化参数面板**: 复杂的参数设置被封装在独立的面板中，保持主界面整洁。
     - **一键分析**: 配置完成后，点击一下即可完成从裂缝识别到物理参数计算的全过程，输出包括：裂缝数量、总面积(mm²)、总长度(mm)，以及每条裂缝的详细数据。
 - **手动测量工具**: (待实现) 提供一个简单的手动测量工具，用户可以在图像上绘制直线以快速测量任意两点间的物理距离。
 - **参数导入/导出**:
@@ -50,57 +51,41 @@
 
 ## 技术架构
 
-本软件采用**分层架构**，将应用程序在逻辑上划分为三个独立的层次：
+本软件采用基于**策略设计模式 (Strategy Pattern)** 的分层架构，将不同的分析类型（如裂缝、孔洞）解耦为可互换的**分析器 (Analyzer)**。
 
-1.  **用户界面层 (UI Layer)**：负责所有与用户交互的界面元素，包括窗口、按钮、滑块等，并展示图像和分析数据。该层的详细文档请参见 `src/app/ui/README.md`。
+1.  **用户界面层 (UI Layer)**：负责所有用户交互。`ControlPanel` 提供一个下拉框来选择分析策略，并动态加载该策略对应的参数面板。
+2.  **业务逻辑层 (Business Logic Layer)**：由`Controller`担当，它作为UI和数据层之间的协调者。它管理着所有可用的分析器，并根据用户的选择设置当前激活的分析器。它不关心分析的具体实现，只负责调用激活分析器的接口。
+3.  **策略/数据处理层 (Strategy/Data Layer)**：由一系列实现`BaseAnalyzer`接口的**具体分析器**组成。每个分析器（如`FractureAnalyzer`）都封装了特定类型分析所需的全套算法、参数和处理流水线。
 
-2.  **业务逻辑层 (Business Logic Layer)**：充当UI层和数据处理层之间的"指挥官"，通过**信号与槽机制**进行解耦。它接收UI层的事件，调用数据处理层的功能，并将结果传递回UI层。
-
-3.  **数据处理层 (Data Processing Layer)**：包含所有底层的计算任务，封装了所有与OpenCV和NumPy相关的函数，如图像读取、滤波、裂缝检测和参数计算等。
-
-业务逻辑层与数据处理层的代码位于 `src/app/core` 目录中，其详细架构说明请参见 `src/app/core/README.md`。
+这种架构使得添加新的分析功能变得非常容易，只需创建一个新的分析器类和一个对应的UI参数面板即可。
 
 **架构图:**
 ```mermaid
 graph TD
-    subgraph UI_Layer [UI层: 用户交互]
-        MainWindow[主窗口]
-        subgraph Controls [交互控件]
-            ControlPanel[控制面板]
-            SettingsDialogs[参数设置对话框]
-        end
-        subgraph Display [显示]
-            MultiStagePreview[多阶段预览窗口]
-            ResultPanel[结果面板]
-        end
-        MainWindow --> ControlPanel
-        MainWindow -- "管理" --> MultiStagePreview
-        MainWindow -- "管理" --> ResultPanel
-        ControlPanel -- "打开" --> SettingsDialogs
+    subgraph UI_用户界面层
+        MainWindow_主窗口 --> ControlPanel_控制面板
+        MainWindow_主窗口 --> ResultPanel_结果面板
+        MainWindow_主窗口 --> MultiStagePreviewWidget_多阶段预览
+        ControlPanel_控制面板 --> ParameterPanels_参数面板
     end
 
-    subgraph Business_Logic_Layer [业务逻辑层: 流程控制]
-        Controller[流程控制器]
-    end
-    
-    subgraph Data_Processing_Layer [数据处理层: 核心算法]
-        ImageProcessor[图像处理器]
-        UnitConverter[单位换算器]
+    subgraph Core_核心逻辑层
+        Controller_控制器 --> BaseAnalyzer_分析器基类
+        Controller_控制器 -- "Manages" --> Analyzers_策略
+        Analyzers_策略 -- "Implements" --> BaseAnalyzer_分析器基类
+        FractureAnalyzer_裂缝分析器 -- "Is a" --> Analyzers_策略
+        FractureAnalyzer_裂缝分析器 -- "Uses" --> ImageOperations_图像操作
+        FractureAnalyzer_裂缝分析器 -- "Uses" --> Constants_常量
+        Controller_控制器 -- "Uses" --> UnitConverter_单位转换器
+        Controller_控制器 -- "Uses" --> Constants_常量
     end
 
-    %% 交互流程
-    SettingsDialogs -- "1. 参数变更" --o Controller
-    Controller -- "2. 触发预览更新" --> ImageProcessor
-    ImageProcessor -- "3. 返回像素结果" --> Controller
-    Controller -- "4. 发送信号" --> MultiStagePreview
-
-    ControlPanel -- "5. 点击'开始分析'" --o Controller
-    Controller -- "6. 调用完整分析流程" --> ImageProcessor
-    ImageProcessor -- "7. 返回裂缝数据(像素)" --> Controller
-    Controller -- "8. 结合单位换算" --o UnitConverter
-    Controller -- "9. 获得最终物理结果" --o Controller
-    Controller -- "10. 发送信号" --> ResultPanel
-    Controller -- "10. 发送信号" --> MultiStagePreview
+    %% Cross-layer Dependencies
+    ControlPanel_控制面板 -- "Triggers" --> Controller_控制器
+    ParameterPanels_参数面板 -- "Signals to" --> Controller_控制器
+    Controller_控制器 -- "Signals to" --> ResultPanel_结果面板
+    Controller_控制器 -- "Signals to" --> MultiStagePreviewWidget_多阶段预览
+    MultiStagePreviewWidget_多阶段预览 -- "Uses" --> Constants_常量
 ```
 
 **技术栈**:
@@ -109,14 +94,8 @@ graph TD
 -   **核心图像处理**: OpenCV-Python, scikit-image
 -   **数值计算**: NumPy
 
-## 分析阶段
+## 数据与状态
 
-软件定义了以下分析处理阶段:
-
-1.  **原始图像 (ORIGINAL)**: 加载的原始岩心图像。
-2.  **灰度处理 (GRAYSCALE)**: 转换为灰度图并去噪的结果。
-3.  **阈值分割 (THRESHOLD)**: 二值化后的黑白图像。
-4.  **形态学处理 (MORPHOLOGY)**: 应用开/闭运算后的形态学处理结果。
-5.  **裂缝检测 (DETECTION)**: 在原图上将识别出的裂缝轮廓用颜色标记出来的可视化结果。
-6.  **测量结果 (MEASUREMENT)**: 对所有检测出的裂缝进行定量计算后得到的结构化数据，包括数量、总长度、总面积等。
+- **数据结构**: 软件的核心数据交换格式是一个字典，其键名由一个中央`constants.py`文件统一定义。这确保了从数据分析到UI展示的各个环节中，数据字段的一致性和稳定性。
+- **预览状态**: 预览的更新机制是**状态驱动**的。`Controller`在处理后，会发送一个包含当前状态（如 `LOADING`, `READY`, `EMPTY`）的信号。UI层的`MultiStagePreviewWidget`接收此信号后，会根据具体状态来决定如何展示，是将所有处理阶段的图像在标签页中一一呈现，还是显示"加载中"或"无结果"的提示。
 

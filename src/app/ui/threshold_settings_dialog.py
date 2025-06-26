@@ -5,7 +5,7 @@
 
 from typing import Optional
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSignal as Signal
 from PyQt5.QtWidgets import (
     QDialog,
     QWidget,
@@ -24,15 +24,15 @@ from ..core.controller import Controller
 class ThresholdSettingsDialog(QDialog):
     """用于设置阈值参数的对话框。"""
     
-    def __init__(self, controller: Controller, parent: Optional[QWidget] = None):
+    parameter_changed = Signal(str, object)
+
+    def __init__(self, parent: Optional[QWidget] = None):
         """初始化对话框。
 
         Args:
-            controller (Controller): 应用程序控制器实例。
             parent (Optional[QWidget]): 父窗口对象。
         """
         super().__init__(parent)
-        self.controller = controller
         
         self.setWindowTitle("调整二值化参数")
         self.setMinimumWidth(350)
@@ -131,27 +131,38 @@ class ThresholdSettingsDialog(QDialog):
             elif isinstance(widget, QDoubleSpinBox):
                 widget.valueChanged.connect(self._on_parameter_changed)
 
-    def _on_parameter_changed(self):
+    def _on_parameter_changed(self, value=None):
         sender = self.sender()
         if not (sender and sender.objectName()): return
 
         param_path = sender.objectName()
-        value = None
-
-        if isinstance(sender, QComboBox): value = self.threshold_method_map.get(sender.currentIndex())
-        elif isinstance(sender, QSlider): value = sender.value()
-        elif isinstance(sender, QDoubleSpinBox): value = sender.value()
         
+        # [修复] 重新实现清晰的逻辑来获取值
+        if isinstance(sender, QComboBox):
+            value = self.threshold_method_map.get(sender.currentIndex())
+        elif isinstance(sender, (QSlider, QDoubleSpinBox)):
+            # value is passed directly by the signal
+            pass
+        else:
+            return # Should not happen
+
+        # 确保窗口大小是奇数
         if "window_size" in param_path and value % 2 == 0:
             value += 1
-            sender.blockSignals(True); sender.setValue(value); sender.blockSignals(False)
+            # 临时阻止信号以避免递归设置
+            sender.blockSignals(True)
+            sender.setValue(value)
+            sender.blockSignals(False)
 
         if value is not None:
-            self.controller.update_parameter(param_path, value)
+            self.parameter_changed.emit(param_path, value)
 
     def update_controls(self, params: dict):
-        p = params.get('analysis_parameters', {}).get('threshold', {})
-        if not p: return
+        print("DEBUG Dialog: update_controls CALLED.")
+        p = params.get('threshold', {})
+        if not p: 
+            print("DEBUG Dialog: update_controls exiting, no threshold params found.")
+            return
         
         all_param_widgets = self.findChildren((QComboBox, QSlider, QDoubleSpinBox))
         for widget in all_param_widgets: widget.blockSignals(True)
@@ -173,6 +184,12 @@ class ThresholdSettingsDialog(QDialog):
         finally:
             for widget in all_param_widgets: widget.blockSignals(False)
             
-            self.threshold_method_combo.currentIndexChanged.emit(self.threshold_method_combo.currentIndex())
-            for slider in self.findChildren(QSlider):
-                slider.valueChanged.emit(slider.value()) 
+            # [修复] 移除以下手动发射信号的代码。
+            # 这些代码是造成无限递归和程序崩溃的根源。
+            # 它们在update_controls的末尾重新触发了连接到_on_parameter_changed的信号，
+            # 导致 "update -> emit -> update" 的死循环。
+            # print("DEBUG Dialog: update_controls is now manually emitting signals to update UI labels.")
+            # self.threshold_method_combo.currentIndexChanged.emit(self.threshold_method_combo.currentIndex())
+            # for slider in self.findChildren(QSlider):
+            #     slider.valueChanged.emit(slider.value())
+            # print("DEBUG Dialog: update_controls FINISHED.") 

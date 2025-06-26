@@ -5,6 +5,7 @@
 
 from typing import Optional
 
+from PyQt5.QtCore import pyqtSignal as Signal
 from PyQt5.QtWidgets import (
     QDialog,
     QWidget,
@@ -14,20 +15,18 @@ from PyQt5.QtWidgets import (
     QSpinBox
 )
 
-from ..core.controller import Controller
-
 class MorphologySettingsDialog(QDialog):
     """用于设置形态学参数的对话框。"""
     
-    def __init__(self, controller: Controller, parent: Optional[QWidget] = None):
+    parameter_changed = Signal(str, object)
+
+    def __init__(self, parent: Optional[QWidget] = None):
         """初始化对话框。
 
         Args:
-            controller (Controller): 应用程序控制器实例。
             parent (Optional[QWidget]): 父窗口对象。
         """
         super().__init__(parent)
-        self.controller = controller
         
         self.setWindowTitle("调整形态学参数")
         self.setMinimumWidth(300)
@@ -65,18 +64,17 @@ class MorphologySettingsDialog(QDialog):
         for spinbox in self.findChildren(QSpinBox):
             spinbox.valueChanged.connect(self._on_parameter_changed)
 
-    def _on_parameter_changed(self):
+    def _on_parameter_changed(self, value: int):
         """当参数变化时，通知控制器。"""
         sender = self.sender()
         if not (sender and sender.objectName()): return
 
         param_path = sender.objectName()
-        value = sender.value()
-        self.controller.update_parameter(param_path, value)
+        self.parameter_changed.emit(param_path, value)
 
     def update_controls(self, params: dict):
         """根据给定的参数字典更新所有UI控件的值。"""
-        p = params.get('analysis_parameters', {}).get('morphology', {})
+        p = params.get('morphology', {})
         if not p: return
 
         for spinbox in self.findChildren(QSpinBox):
@@ -89,8 +87,4 @@ class MorphologySettingsDialog(QDialog):
             self.findChild(QSpinBox, "morphology.close_iterations").setValue(p.get('close_iterations', 1))
         finally:
             for spinbox in self.findChildren(QSpinBox):
-                spinbox.blockSignals(False)
-            
-            # 手动触发一次信号以确保UI同步
-            for spinbox in self.findChildren(QSpinBox):
-                spinbox.valueChanged.emit(spinbox.value()) 
+                spinbox.blockSignals(False) 

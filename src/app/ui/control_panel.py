@@ -4,9 +4,9 @@
 开始分析和调整处理参数。遵循 Google 风格的 Docstrings 和类型提示。
 """
 
-from typing import Optional
+from typing import Optional, List, Tuple
 
-from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtCore import pyqtSignal, Qt
 from PyQt5.QtWidgets import (
     QWidget,
     QPushButton,
@@ -14,13 +14,14 @@ from PyQt5.QtWidgets import (
     QFileDialog,
     QGroupBox,
     QHBoxLayout,
-    QFormLayout
+    QComboBox,
+    QStackedWidget,
+    QLabel,
+    QMessageBox
 )
 
 from ..core.controller import Controller
-from .threshold_settings_dialog import ThresholdSettingsDialog
-from .morphology_settings_dialog import MorphologySettingsDialog
-from .filtering_settings_dialog import FilteringSettingsDialog
+from .parameter_panels.fracture_params_panel import FractureParamsPanel
 
 
 class ControlPanel(QWidget):
@@ -28,13 +29,6 @@ class ControlPanel(QWidget):
 
     该类包含加载图像、开始分析和测量等按钮，以及所有分析参数的调节控件。
     通过信号机制与主窗口进行通信。
-
-    Attributes:
-        loadImageClicked (pyqtSignal): 加载图像按钮点击时发出，携带文件路径字符串。
-        startAnalysisClicked (pyqtSignal): 开始分析按钮点击时发出。
-        measureToolClicked (pyqtSignal): 测量工具按钮点击时发出。
-        import_parameters_requested (pyqtSignal): 请求导入参数时发出。
-        export_parameters_requested (pyqtSignal): 请求导出参数时发出。
     """
 
     # 定义信号
@@ -43,24 +37,21 @@ class ControlPanel(QWidget):
     measureToolClicked = pyqtSignal()
     import_parameters_requested = pyqtSignal()
     export_parameters_requested = pyqtSignal()
+    analyzer_changed = pyqtSignal()
 
     def __init__(self, controller: Controller, parent: Optional[QWidget] = None) -> None:
-        """初始化控制面板。
-
-        Args:
-            controller (Controller): 应用程序控制器实例。
-            parent (Optional[QWidget]): 父窗口对象。默认为 None。
-        """
+        """初始化控制面板。"""
         super().__init__(parent)
         self.controller = controller
         
-        # 对话框实例
-        self.threshold_dialog: Optional[ThresholdSettingsDialog] = None
-        self.morphology_dialog: Optional[MorphologySettingsDialog] = None
-        self.filtering_dialog: Optional[FilteringSettingsDialog] = None
-        
+        # 分析器ID到其UI面板类的映射
+        self.analyzer_panel_map = {
+            'fracture': FractureParamsPanel
+        }
+
         self._init_ui()
         self._connect_signals()
+        self._populate_analyzer_selector() # 主动填充分析器列表
 
     def _init_ui(self) -> None:
         """初始化UI组件和布局。"""
@@ -68,12 +59,12 @@ class ControlPanel(QWidget):
         self.start_analysis_btn = QPushButton("一键执行分析")
         self.measure_btn = QPushButton("手动测量")
 
-        main_layout = QVBoxLayout()
+        main_layout = QVBoxLayout(self)
         main_layout.addWidget(self.load_image_btn)
         main_layout.addWidget(self.start_analysis_btn)
         main_layout.addWidget(self.measure_btn)
         main_layout.addWidget(self._create_parameter_management_group())
-        main_layout.addWidget(self._create_parameter_adjustment_group())
+        main_layout.addWidget(self._create_analysis_mode_group())
         main_layout.addStretch(1)
 
         self.setLayout(main_layout)
@@ -88,18 +79,20 @@ class ControlPanel(QWidget):
         layout.addWidget(self.export_btn)
         return group
 
-    def _create_parameter_adjustment_group(self) -> QGroupBox:
-        """创建用于打开参数调整对话框的按钮组。"""
-        group = QGroupBox("参数调整")
+    def _create_analysis_mode_group(self) -> QGroupBox:
+        """创建分析模式选择和参数调整的组合框。"""
+        group = QGroupBox("分析模式")
         layout = QVBoxLayout(group)
         
-        self.threshold_btn = QPushButton("二值化参数...")
-        self.morphology_btn = QPushButton("形态学参数...")
-        self.filtering_btn = QPushButton("过滤与合并参数...")
+        # 模式选择下拉框
+        self.mode_selector_combo = QComboBox()
         
-        layout.addWidget(self.threshold_btn)
-        layout.addWidget(self.morphology_btn)
-        layout.addWidget(self.filtering_btn)
+        # 参数面板的堆叠窗口
+        self.params_stack = QStackedWidget()
+
+        layout.addWidget(QLabel("选择分析类型:"))
+        layout.addWidget(self.mode_selector_combo)
+        layout.addWidget(self.params_stack)
         
         return group
 
@@ -107,49 +100,97 @@ class ControlPanel(QWidget):
         """连接所有UI控件的信号。"""
         # 主功能按钮
         self.load_image_btn.clicked.connect(self._on_load_image_clicked)
-        self.start_analysis_btn.clicked.connect(self.startAnalysisClicked)
+        # 将 "开始分析" 按钮连接到新的控制器方法
+        self.start_analysis_btn.clicked.connect(self.controller.run_full_analysis)
         self.measure_btn.clicked.connect(self.measureToolClicked)
         
         # 参数管理
         self.import_btn.clicked.connect(self.import_parameters_requested)
         self.export_btn.clicked.connect(self.export_parameters_requested)
         
-        # 参数调整对话框
-        self.threshold_btn.clicked.connect(self._open_threshold_dialog)
-        self.morphology_btn.clicked.connect(self._open_morphology_dialog)
-        self.filtering_btn.clicked.connect(self._open_filtering_dialog)
+        # 分析器和模式选择
+        self.mode_selector_combo.currentIndexChanged.connect(self._on_mode_changed)
 
-    def _open_threshold_dialog(self):
-        """打开二值化参数设置对话框。"""
-        if self.threshold_dialog is None:
-            self.threshold_dialog = ThresholdSettingsDialog(self.controller, self)
-            self.controller.parameters_updated.connect(self.threshold_dialog.update_controls)
-            self.threshold_dialog.update_controls(self.controller.analysis_params)
-        self.threshold_dialog.show()
-        self.threshold_dialog.activateWindow()
+    def _populate_analyzer_selector(self):
+        """从控制器获取并填充分析器选择器。"""
+        # 主动从控制器拉取分析器列表
+        analyzers = self.controller.get_registered_analyzers()
+        print(f"[DEBUG ControlPanel] 从控制器获取分析器列表: {analyzers}")
+
+        # 断开信号，以防在填充时意外触发
+        self.mode_selector_combo.currentIndexChanged.disconnect(self._on_mode_changed)
+
+        self.mode_selector_combo.clear()
+        for analyzer_id, analyzer_name in analyzers:
+            self.mode_selector_combo.addItem(analyzer_name, userData=analyzer_id)
         
-    def _open_morphology_dialog(self):
-        """打开形态学参数设置对话框。"""
-        if self.morphology_dialog is None:
-            self.morphology_dialog = MorphologySettingsDialog(self.controller, self)
-            self.controller.parameters_updated.connect(self.morphology_dialog.update_controls)
-            self.morphology_dialog.update_controls(self.controller.analysis_params)
-        self.morphology_dialog.show()
-        self.morphology_dialog.activateWindow()
+        # 重新连接信号
+        self.mode_selector_combo.currentIndexChanged.connect(self._on_mode_changed)
+        
+        # 手动触发一次模式切换，以加载默认的分析器面板
+        if self.mode_selector_combo.count() > 0:
+            self.mode_selector_combo.setCurrentIndex(0)
+            self._on_mode_changed(0) # 明确调用，确保加载
 
-    def _open_filtering_dialog(self):
-        """打开过滤与合并参数设置对话框。"""
-        if self.filtering_dialog is None:
-            self.filtering_dialog = FilteringSettingsDialog(self.controller, self)
-            self.controller.parameters_updated.connect(self.filtering_dialog.update_controls)
-            self.filtering_dialog.update_controls(self.controller.analysis_params)
-        self.filtering_dialog.show()
-        self.filtering_dialog.activateWindow()
+    def _on_mode_changed(self, index: int):
+        """当用户切换分析模式时，创建并显示对应的参数面板。"""
+        if index == -1:
+            return
+            
+        analyzer_id = self.mode_selector_combo.itemData(index)
+        if not analyzer_id:
+            return
 
+        # 1. 通知控制器切换激活的分析器
+        self.controller.set_active_analyzer(analyzer_id)
+        
+        # 2. 清空旧的参数面板
+        while self.params_stack.count() > 0:
+            widget = self.params_stack.widget(0)
+            self.params_stack.removeWidget(widget)
+            widget.deleteLater()
+
+        # 3. 使用映射表查找并创建新的参数面板
+        PanelClass = self.analyzer_panel_map.get(analyzer_id)
+        if PanelClass:
+            panel_instance = PanelClass(self.controller)
+            
+            # 4. 执行关键连接：
+            #   - 将面板的信号连接到控制器的槽 (UI -> Controller)
+            panel_instance.parameter_changed.connect(self.controller.update_parameter)
+            #   - 将控制器的信号连接到面板的槽 (Controller -> UI)
+            #   - 这确保了从文件加载参数时，对话框能够同步更新
+            self.controller.parameters_updated.connect(panel_instance.on_parameters_updated)
+
+            # 5. 将新面板添加到堆叠窗口并显示
+            self.params_stack.addWidget(panel_instance)
+            self.params_stack.setCurrentWidget(panel_instance)
+            print(f"UI已切换到分析模式: {self.mode_selector_combo.currentText()}")
+            self.analyzer_changed.emit()
+        else:
+            print(f"警告: 未找到分析器ID '{analyzer_id}' 对应的参数面板类。")
+        
     def _on_load_image_clicked(self) -> None:
-        """打开文件对话框让用户选择图像。"""
+        """打开文件对话框让用户选择图像，并发射信号。"""
         file_path, _ = QFileDialog.getOpenFileName(
             self, "选择一张岩心图像", "", "Image Files (*.png *.jpg *.bmp *.jpeg)"
         )
         if file_path:
-            self.loadImageClicked.emit(file_path) 
+            self.loadImageClicked.emit(file_path)
+
+    def _on_analyzers_registered(self, analyzers: List[Tuple[str, str]]):
+        """当控制器注册了分析器后，仅更新模式选择下拉框。"""
+        # 断开信号，以防在填充时意外触发
+        self.mode_selector_combo.currentIndexChanged.disconnect(self._on_mode_changed)
+
+        self.mode_selector_combo.clear()
+        for analyzer_id, analyzer_name in analyzers:
+            self.mode_selector_combo.addItem(analyzer_name, userData=analyzer_id)
+        
+        # 重新连接信号
+        self.mode_selector_combo.currentIndexChanged.connect(self._on_mode_changed)
+        
+        # 手动触发一次模式切换，以加载默认的分析器面板
+        if self.mode_selector_combo.count() > 0:
+            self.mode_selector_combo.setCurrentIndex(0)
+            self._on_mode_changed(0) # 明确调用，确保加载 

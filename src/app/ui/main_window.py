@@ -18,18 +18,18 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtGui import QIcon
+import numpy as np
 
 # 导入本地UI组件
 from .control_panel import ControlPanel
 from .result_panel import ResultPanel
-from .preview_window import PreviewWindow
-from .analysis_preview_window import AnalysisPreviewWindow
+from .multi_stage_preview_widget import MultiStagePreviewWidget
 from .measurement_dialog import MeasurementDialog
 from .style_manager import style_manager  # 导入样式管理器
 
 # 导入控制器和枚举
 from ..core.controller import Controller
-from ..core.analysis_stages import AnalysisStage
+from ..utils.constants import StageKeys, PreviewState, ResultKeys
 
 
 class MainWindow(QMainWindow):
@@ -41,8 +41,7 @@ class MainWindow(QMainWindow):
     Attributes:
         control_panel: 控制面板实例
         result_panel: 结果面板实例
-        preview_window: 预览窗口实例
-        analysis_preview_window: 分析预览窗口实例
+        main_preview_window: 主预览窗口实例
         controller: 应用程序控制器实例
     """
     
@@ -76,12 +75,8 @@ class MainWindow(QMainWindow):
         h_splitter = QSplitter(Qt.Horizontal)
         
         # 创建预览窗口
-        self.preview_window = PreviewWindow()
-        h_splitter.addWidget(self.preview_window)
-        
-        # 创建分析预览窗口
-        self.analysis_preview_window = AnalysisPreviewWindow()
-        self.analysis_preview_window.hide() # 默认隐藏
+        self.main_preview_window = MultiStagePreviewWidget()
+        h_splitter.addWidget(self.main_preview_window)
         
         # 创建垂直分割器
         v_splitter = QSplitter(Qt.Vertical)
@@ -136,16 +131,6 @@ class MainWindow(QMainWindow):
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
         
-        # 创建视图菜单
-        view_menu = self.menuBar().addMenu("视图")
-        
-        # 添加显示分析预览窗口选项
-        show_analysis_preview_action = QAction("显示分析预览窗口", self)
-        show_analysis_preview_action.setCheckable(True)
-        show_analysis_preview_action.setChecked(False)
-        show_analysis_preview_action.triggered.connect(self._toggle_analysis_preview)
-        view_menu.addAction(show_analysis_preview_action)
-        
         # 创建帮助菜单
         help_menu = self.menuBar().addMenu("帮助")
         
@@ -162,10 +147,11 @@ class MainWindow(QMainWindow):
         self.control_panel.measureToolClicked.connect(self._on_measure_tool)
         self.control_panel.import_parameters_requested.connect(self._handle_import_parameters)
         self.control_panel.export_parameters_requested.connect(self._handle_export_parameters)
+        self.control_panel.analyzer_changed.connect(self.main_preview_window.clear_all)
         
         # 连接控制器信号
         self.controller.analysis_complete.connect(self._on_analysis_complete)
-        self.controller.preview_stage_updated.connect(self._on_preview_stage_updated)
+        self.controller.preview_state_changed.connect(self.main_preview_window.display_state)
         self.controller.error_occurred.connect(self._on_error_occurred)
         
     def _on_menu_open_image(self):
@@ -186,28 +172,33 @@ class MainWindow(QMainWindow):
         Args:
             file_path (str): 图像文件的路径。
         """
-        # 在加载新图像之前，首先清空所有旧的预览
-        self.analysis_preview_window.clear_all()
-        
         self.statusBar().showMessage(f"正在加载图像: {file_path}...")
         
         # 使用控制器加载图像
         success, message = self.controller.load_image_from_file(file_path)
         
         if success:
-            # 获取加载的图像和DPI信息
-            image = self.controller.get_current_image()
-            dpi = self.controller.get_current_dpi()
-            
-            # 在预览窗口显示图像
-            self.preview_window.display_image(image)
-            
-            # 更新状态栏
+            # 状态栏更新
             self.statusBar().showMessage(message)
             
             # 更新结果面板显示DPI信息
+            dpi = self.controller.get_current_dpi()
             self.result_panel.update_dpi_info(dpi)
             
+            # 加载成功后，立即在预览窗口中显示原始图像
+            original_image = self.controller.get_current_image()
+            if original_image is not None:
+                # 构造一个符合MultiStagePreviewWidget期望的READY状态载荷
+                payload = {
+                    'state': PreviewState.READY,
+                    'payload': {
+                        ResultKeys.PREVIEWS.value: {
+                            StageKeys.ORIGINAL.value: original_image
+                        }
+                    }
+                }
+                self.main_preview_window.display_state(payload)
+
             print(f"图像已成功加载: {file_path}")
         else:
             # 显示错误消息
@@ -249,70 +240,60 @@ class MainWindow(QMainWindow):
         )
         if filepath:
             self.controller.save_parameters(filepath)
-            self.statusBar().showMessage(f"参数已保存至 {filepath}。")
+            self.statusBar().showMessage(f"参数已成功导出至 {filepath}。")
 
     def _on_analysis_complete(self, results: dict):
         """分析完成处理函数。
         
         Args:
-            results (dict): 包含分析结果的字典。
+            results (dict): 分析结果字典。
         """
-        self.result_panel.update_analysis_results(results)
-        self.statusBar().showMessage("分析完成。")
-
-    def _on_preview_stage_updated(self, stage: AnalysisStage, result_data: dict):
-        """预览阶段更新处理函数。
+        QApplication.restoreOverrideCursor()
+        self.statusBar().showMessage("分析完成！")
         
-        Args:
-            stage (AnalysisStage): 当前分析阶段。
-            result_data (dict): 包含图像或数据的字典。
-        """
-        # 1. 更新多阶段预览窗口
-        # 特殊处理：当是MEASUREMENT阶段时，我们希望显示最终的DETECTION图像
-        if stage == AnalysisStage.MEASUREMENT:
-            # 从控制器获取DETECTION阶段的结果，里面包含图像
-            detection_result = self.controller.analysis_results.get(AnalysisStage.DETECTION, {})
-            display_image = detection_result.get("image")
-            
-            # 创建一个新的字典，合并DETECTION图像和MEASUREMENT的统计数据
-            combined_data = result_data.copy()
-            if display_image is not None:
-                combined_data['image'] = display_image
-            
-            self.analysis_preview_window.update_stage_preview(stage, combined_data)
-        else:
-            # 对于其他所有阶段，直接传递收到的结果字典
-            self.analysis_preview_window.update_stage_preview(stage, result_data)
+        # 将所有图像结果（预览+最终）传递给预览组件进行显示
+        previews = results.get('previews', {})
+        
+        # 添加最终的可视化结果图
+        if 'visualization' in results:
+            previews[StageKeys.DETECTION.value] = results['visualization']
+        
+        # 添加原始图像，确保它总是显示
+        original_image = self.controller.get_current_image()
+        if original_image is not None:
+            previews[StageKeys.ORIGINAL.value] = original_image
 
-        # 2. 如果是最终检测阶段，也更新主预览窗口
-        image = result_data.get("image")
-        if stage == AnalysisStage.DETECTION and image is not None:
-            self.preview_window.update_image(image)
+        # 构建载荷并更新预览窗口状态
+        payload = {
+            'state': PreviewState.READY,
+            'payload': { 'previews': previews }
+        }
+        self.main_preview_window.display_state(payload)
+        
+        # 将量化分析数据更新到结果面板
+        self.result_panel.update_analysis_results(results.get('measurements', {}))
         
     def _on_error_occurred(self, message: str):
         """错误处理函数。"""
-        QMessageBox.warning(self, "错误", message)
-        self.statusBar().showMessage(f"操作失败: {message}", 5000)
+        # 恢复光标，以防错误发生在耗时操作期间
+        QApplication.restoreOverrideCursor()
+        
+        # 使用QMessageBox显示错误信息
+        QMessageBox.critical(self, "发生错误", message)
+        self.statusBar().showMessage("处理失败")
 
     def _on_measure_tool(self):
-        """测量工具处理函数。"""
-        self.statusBar().showMessage("测量工具（待实现）")
+        """启动手动测量工具。"""
+        # 这里只是UI演示，实际功能需要与控制器连接
+        dialog = MeasurementDialog(self)
+        dialog.exec_()
         
-    def _toggle_analysis_preview(self, checked):
-        """切换分析预览窗口的可见性。"""
-        if checked:
-            self.analysis_preview_window.show()
-        else:
-            self.analysis_preview_window.hide()
-            
-    def _update_all_analysis_previews(self):
-        """使用控制器中的所有当前结果刷新分析预览窗口。"""
-        all_results = self.controller.get_all_analysis_results()
-        self.analysis_preview_window.clear_all()
-        for stage, result_data in all_results.items():
-            if result_data:
-                self.analysis_preview_window.update_stage_preview(stage, result_data)
-
     def _show_about(self):
         """显示关于对话框。"""
-        QMessageBox.about(self, "关于", "岩石裂缝分析系统 v1.0\n\n一个用于岩心图像裂缝分析的桌面工具。") 
+        QMessageBox.about(
+            self,
+            "关于岩石裂缝分析系统",
+            "版本 1.0\n\n"
+            "一个用于自动分析岩心图像裂缝的桌面应用。\n"
+            "基于 PyQt5 和 OpenCV 构建。"
+        ) 

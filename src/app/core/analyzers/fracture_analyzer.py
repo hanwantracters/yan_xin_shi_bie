@@ -1,0 +1,173 @@
+"""裂缝分析器模块。
+
+该模块实现了BaseAnalyzer接口，专门用于识别和分析图像中的裂缝。
+"""
+
+import cv2
+import numpy as np
+from typing import Dict, Any, List, Tuple
+from skimage.morphology import skeletonize
+
+from .base_analyzer import BaseAnalyzer
+from .. import image_operations as ops
+from ...utils.constants import ResultKeys, StageKeys
+
+class FractureAnalyzer(BaseAnalyzer):
+    """
+    裂缝分析器，负责执行所有与裂缝相关的计算和处理。
+    """
+    def get_name(self) -> str:
+        return "裂缝分析"
+
+    def get_id(self) -> str:
+        return "fracture"
+
+    def get_default_parameters(self) -> Dict[str, Any]:
+        return {
+            'threshold': {
+                'method': 'sauvola',
+                'value': 128,
+                'block_size': 51,
+                'c': 2,
+                'window_size': 51,
+                'k': 0.2,
+                'r': 128
+            },
+            'morphology': {
+                'opening': {
+                    'enabled': True,
+                    'kernel_shape': 'rect',
+                    'kernel_size': (3, 3),
+                    'iterations': 2,
+                    'min_area': 10,
+                },
+                'closing': {
+                    'enabled': True,
+                    'kernel_shape': 'rect',
+                    'kernel_size': (3, 3),
+                    'iterations': 1,
+                }
+            },
+            'filtering': {
+                'min_aspect_ratio': 5.0,
+                'min_length_pixels': 10.0,
+            }
+        }
+    
+    def run_analysis(self, image: np.ndarray, params: Dict[str, Any]) -> Dict[str, Any]:
+        """执行裂缝分析的完整流程。"""
+        # 1. 预处理
+        gray = ops.convert_to_grayscale(image)
+        blurred = ops.apply_gaussian_blur(gray)
+
+        # 2. 阈值分割
+        binary = self._apply_threshold(blurred, params.get('threshold', {}))
+        
+        # 3. 形态学处理
+        binary_processed = ops.apply_morphological_postprocessing(
+            binary,
+            opening_params=params.get('morphology', {}).get('opening'),
+            closing_params=params.get('morphology', {}).get('closing')
+        )
+        
+        # 4. 裂缝分析与过滤
+        fractures = self._analyze_and_filter_fractures(
+            binary_processed,
+            params.get('filtering', {})
+        )
+        
+        # 5. 结果可视化
+        visualization = self._draw_analysis_results(image.copy(), fractures)
+        
+        # 6. 定量测量
+        measurements = self._calculate_measurements(fractures)
+
+        final_result = {
+            ResultKeys.VISUALIZATION.value: visualization,
+            ResultKeys.MEASUREMENTS.value: measurements,
+            ResultKeys.PREVIEWS.value: {
+                StageKeys.GRAY.value: gray,
+                StageKeys.BINARY.value: binary,
+                StageKeys.MORPH.value: binary_processed,
+            }
+        }
+        print(f"[DEBUG FractureAnalyzer] Returning result with keys: {final_result.keys()}")
+        return final_result
+
+    def _apply_threshold(self, image: np.ndarray, params: dict) -> np.ndarray:
+        """根据参数应用不同的阈值算法。"""
+        method = params.get('method', 'sauvola')
+        if method == 'global':
+            return ops.apply_global_threshold(image, params.get('value', 128))
+        elif method == 'adaptive_gaussian':
+            return ops.apply_adaptive_gaussian_threshold(image, params.get('block_size', 11), params.get('c', 2))
+        elif method == 'otsu':
+            binary, _ = ops.apply_otsu_threshold(image)
+            return binary
+        elif method == 'niblack':
+            return ops.apply_niblack_threshold(image, params.get('window_size', 25), params.get('k', 0.2))
+        elif method == 'sauvola':
+            return ops.apply_sauvola_threshold(image, params.get('window_size', 25), params.get('k', 0.2), params.get('r', 128))
+        return image
+
+    def _analyze_and_filter_fractures(self, binary_image: np.ndarray, params: dict) -> List[Dict]:
+        """从二值图中分析和过滤裂缝。"""
+        min_aspect_ratio = params.get('min_aspect_ratio', 5.0)
+        min_length_pixels = params.get('min_length_pixels', 0.0)
+
+        contours, _ = cv2.findContours(binary_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        valid_fractures = []
+        for contour in contours:
+            if len(contour) < 5:
+                continue
+
+            area = cv2.contourArea(contour)
+            rect = cv2.minAreaRect(contour)
+            (w, h) = rect[1]
+            if w == 0 or h == 0:
+                continue
+            
+            aspect_ratio = max(w, h) / min(w, h)
+            
+            # 骨架化计算精确长度
+            mask = np.zeros(binary_image.shape, np.uint8)
+            cv2.drawContours(mask, [contour], -1, 255, -1)
+            skeleton = skeletonize(mask / 255)
+            length_pixels = np.sum(skeleton)
+
+            if aspect_ratio >= min_aspect_ratio and length_pixels >= min_length_pixels:
+                valid_fractures.append({
+                    'contour': contour,
+                    'area_pixels': area,
+                    'length_pixels': length_pixels,
+                    'aspect_ratio': aspect_ratio,
+                    'angle': rect[2]
+                })
+        return valid_fractures
+        
+    def _draw_analysis_results(self, original_image: np.ndarray, fractures: List[Dict]) -> np.ndarray:
+        """将分析结果绘制在原始图像上。"""
+        if not fractures:
+            return original_image
+            
+        result_image = original_image.copy()
+        for fracture in fractures:
+            cv2.drawContours(result_image, [fracture['contour']], -1, (0, 255, 0), 2)
+        return result_image
+
+    def _calculate_measurements(self, fractures: List[Dict]) -> Dict:
+        """计算最终的测量统计数据。"""
+        count = len(fractures)
+        total_area = sum(f['area_pixels'] for f in fractures)
+        total_length = sum(f['length_pixels'] for f in fractures)
+
+        measurements = {
+            'count': count,
+            'total_area_pixels': total_area,
+            'total_length_pixels': total_length,
+            'details': fractures
+        }
+
+        print(f"[DEBUG FractureAnalyzer] 生成的测量数据: {measurements}")
+        return measurements 

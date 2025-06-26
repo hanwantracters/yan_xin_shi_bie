@@ -5,6 +5,7 @@
 
 from typing import Optional
 
+from PyQt5.QtCore import pyqtSignal as Signal
 from PyQt5.QtWidgets import (
     QDialog,
     QWidget,
@@ -15,20 +16,18 @@ from PyQt5.QtWidgets import (
     QCheckBox
 )
 
-from ..core.controller import Controller
-
 class FilteringSettingsDialog(QDialog):
     """用于设置过滤与合并参数的对话框。"""
     
-    def __init__(self, controller: Controller, parent: Optional[QWidget] = None):
+    parameter_changed = Signal(str, object)
+
+    def __init__(self, parent: Optional[QWidget] = None):
         """初始化对话框。
 
         Args:
-            controller (Controller): 应用程序控制器实例。
             parent (Optional[QWidget]): 父窗口对象。
         """
         super().__init__(parent)
-        self.controller = controller
         
         self.setWindowTitle("调整过滤与合并参数")
         self.setMinimumWidth(300)
@@ -78,23 +77,20 @@ class FilteringSettingsDialog(QDialog):
             elif isinstance(widget, QCheckBox):
                 widget.toggled.connect(self._on_parameter_changed)
 
-    def _on_parameter_changed(self):
+    def _on_parameter_changed(self, value):
         """当参数变化时，通知控制器。"""
         sender = self.sender()
         if not (sender and sender.objectName()): return
 
         param_path = sender.objectName()
-        value = None
-        if isinstance(sender, QDoubleSpinBox): value = sender.value()
-        elif isinstance(sender, QCheckBox): value = sender.isChecked()
         
         if value is not None:
-            self.controller.update_parameter(param_path, value)
+            self.parameter_changed.emit(param_path, value)
 
     def update_controls(self, params: dict):
         """根据给定的参数字典更新所有UI控件的值。"""
-        p_filter = params.get('analysis_parameters', {}).get('filtering', {})
-        p_merge = params.get('analysis_parameters', {}).get('merging', {})
+        p_filter = params.get('filtering', {})
+        p_merge = params.get('merging', {})
         if not (p_filter and p_merge): return
 
         all_widgets = self.findChildren((QDoubleSpinBox, QCheckBox))
@@ -107,9 +103,4 @@ class FilteringSettingsDialog(QDialog):
             self.findChild(QDoubleSpinBox, "merging.merge_distance_mm").setValue(p_merge.get('merge_distance_mm', 2.0))
             self.findChild(QDoubleSpinBox, "merging.max_angle_diff").setValue(p_merge.get('max_angle_diff', 15.0))
         finally:
-            for widget in all_widgets: widget.blockSignals(False)
-            
-            # 手动触发一次信号以确保UI同步
-            for widget in all_widgets:
-                if isinstance(widget, QDoubleSpinBox): widget.valueChanged.emit(widget.value())
-                elif isinstance(widget, QCheckBox): widget.toggled.emit(widget.isChecked()) 
+            for widget in all_widgets: widget.blockSignals(False) 

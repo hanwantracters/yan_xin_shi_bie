@@ -69,14 +69,19 @@ class ResultPanel(QWidget):
         Args:
             results: 包含分析结果的字典。
         """
+        # --- 调试打印 ---
+        print(f"[DEBUG ResultPanel] 收到更新数据: {results}")
+
         # --- 更新摘要 ---
         summary_str = "分析摘要:\n\n"
-        summary_str += f"裂缝数量: {results.get('fracture_count', 0)}\n"
+        # 注意：这里我们暂时保留错误的键名，以便观察问题
+        summary_str += f"裂缝数量: {results.get('fracture_count', '未找到')}\n"
         summary_str += f"总面积: {results.get('total_area_mm2', 0):.4f} mm²\n"
         summary_str += f"总长度: {results.get('total_length_mm', 0):.4f} mm\n"
         self.summary_text.setText(summary_str)
         
         # --- 更新详细数据表格 ---
+        # 注意：这里我们暂时保留错误的键名，以便观察问题
         details = results.get('detailed_fractures', [])
         self.details_table.setRowCount(len(details))
         
