@@ -171,12 +171,15 @@ class FractureAnalyzer(BaseAnalyzer):
         
     def _draw_analysis_results(self, original_image: np.ndarray, fractures: List[Dict]) -> np.ndarray:
         """将分析结果绘制在原始图像上。"""
+        print("[DEBUG Analyzer] Drawing analysis results...")
         if not fractures:
+            print("[DEBUG Analyzer] No fractures to draw.")
             return original_image
             
         result_image = original_image.copy()
+        print(f"[DEBUG Analyzer] Drawing {len(fractures)} contours with BGR color: (0, 0, 255)")
         for fracture in fractures:
-            cv2.drawContours(result_image, [fracture['contour']], -1, (0, 255, 0), 2)
+            cv2.drawContours(result_image, [fracture['contour']], -1, (0, 0, 255), 2)
         return result_image
 
     def _calculate_measurements(self, fractures: List[Dict]) -> Dict:
@@ -193,7 +196,7 @@ class FractureAnalyzer(BaseAnalyzer):
         }
 
         print(f"[DEBUG FractureAnalyzer] 生成的测量数据: {measurements}")
-        return measurements
+        return measurements 
 
     def is_result_empty(self, results: Dict[str, Any]) -> bool:
         """检查裂缝分析结果是否为空。"""

@@ -156,14 +156,18 @@ class ThresholdSettingsDialog(QDialog):
             sender.blockSignals(False)
 
         if value is not None:
+            print(f"[DEBUG Dialog] Parameter changed: {param_path} = {value}")
             self.parameter_changed.emit(param_path, value)
 
             # 检查是否需要触发实时预览
             current_params = self.controller.get_current_parameters()
+            print(f"[DEBUG Dialog] All current params from controller: {current_params}")
             param_group = param_path.split('.')[0] # e.g., 'threshold'
             
             hints = current_params.get(param_group, {}).get('ui_hints', {})
+            print(f"[DEBUG Dialog] Retrieved hints for group '{param_group}': {hints}")
             if hints.get('realtime', False):
+                print(f"[DEBUG Dialog] Realtime hint is True. Emitting request.")
                 self.realtime_preview_requested.emit()
 
     def update_controls(self, params: dict):

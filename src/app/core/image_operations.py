@@ -24,18 +24,18 @@ def apply_gaussian_blur(image: np.ndarray, kernel_size: Tuple[int, int] = None) 
 
 def apply_global_threshold(image: np.ndarray, threshold_value: int = 128) -> np.ndarray:
     """应用全局阈值分割。"""
-    _, binary = cv2.threshold(image, threshold_value, 255, cv2.THRESH_BINARY)
+    _, binary = cv2.threshold(image, threshold_value, 255, cv2.THRESH_BINARY_INV)
     return binary
 
 def apply_adaptive_gaussian_threshold(image: np.ndarray, block_size: int = 11, c: int = 2) -> np.ndarray:
     """应用自适应高斯阈值分割。"""
     if block_size % 2 == 0:
         block_size += 1
-    return cv2.adaptiveThreshold(image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, block_size, c)
+    return cv2.adaptiveThreshold(image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, block_size, c)
 
 def apply_otsu_threshold(image: np.ndarray) -> Tuple[np.ndarray, int]:
     """应用Otsu阈值分割。"""
-    otsu_thresh, binary = cv2.threshold(image, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    otsu_thresh, binary = cv2.threshold(image, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
     return binary, int(otsu_thresh)
 
 def apply_niblack_threshold(image: np.ndarray, window_size: int = 25, k: float = 0.2) -> np.ndarray:
@@ -43,7 +43,7 @@ def apply_niblack_threshold(image: np.ndarray, window_size: int = 25, k: float =
     if window_size % 2 == 0:
         window_size += 1
     thresh_val = threshold_niblack(image, window_size=window_size, k=k)
-    return (image > thresh_val).astype(np.uint8) * 255
+    return (image < thresh_val).astype(np.uint8) * 255
 
 def apply_sauvola_threshold(image: np.ndarray, window_size: int = 25, k: float = 0.2, r: float = 128) -> np.ndarray:
     """应用Sauvola阈值分割。"""
@@ -51,7 +51,7 @@ def apply_sauvola_threshold(image: np.ndarray, window_size: int = 25, k: float =
     if window_size % 2 == 0:
         window_size += 1
     thresh_val = threshold_sauvola(image, window_size=window_size, k=k, r=r)
-    return (image > thresh_val).astype(np.uint8) * 255
+    return (image < thresh_val).astype(np.uint8) * 255
 
 def create_morphology_kernel(kernel_shape: str = 'rect', kernel_size: Tuple[int, int] = (5, 5)) -> np.ndarray:
     """创建形态学操作的核。"""

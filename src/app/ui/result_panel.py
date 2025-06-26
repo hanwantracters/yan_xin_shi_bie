@@ -75,21 +75,21 @@ class ResultPanel(QWidget):
         # --- 更新摘要 ---
         summary_str = "分析摘要:\n\n"
         # 注意：这里我们暂时保留错误的键名，以便观察问题
-        summary_str += f"裂缝数量: {results.get('fracture_count', '未找到')}\n"
+        summary_str += f"裂缝数量: {results.get('count', '未找到')}\n"
         summary_str += f"总面积: {results.get('total_area_mm2', 0):.4f} mm²\n"
         summary_str += f"总长度: {results.get('total_length_mm', 0):.4f} mm\n"
         self.summary_text.setText(summary_str)
         
         # --- 更新详细数据表格 ---
         # 注意：这里我们暂时保留错误的键名，以便观察问题
-        details = results.get('detailed_fractures', [])
+        details = results.get('details', [])
         self.details_table.setRowCount(len(details))
         
         for row, item in enumerate(details):
             self.details_table.setItem(row, 0, QTableWidgetItem(str(item.get('id', row + 1))))
             self.details_table.setItem(row, 1, QTableWidgetItem(f"{item.get('area_mm2', 0):.4f}"))
             self.details_table.setItem(row, 2, QTableWidgetItem(f"{item.get('length_mm', 0):.4f}"))
-            self.details_table.setItem(row, 3, QTableWidgetItem(f"{item.get('angle_degrees', 0):.2f}"))
+            self.details_table.setItem(row, 3, QTableWidgetItem(f"{item.get('angle', 0):.2f}"))
 
     def update_dpi_info(self, dpi: Optional[Tuple[float, float]]) -> None:
         """更新图像DPI信息。

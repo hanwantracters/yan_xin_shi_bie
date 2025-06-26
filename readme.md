@@ -17,8 +17,8 @@
         - **科学的筛选标准**: 基于面积和坚实度(Solidity)进行筛选，比传统的圆度筛选更具鲁棒性，能准确识别各种形状的孔洞。
 - **智能实时预览**:
     - **选择性实时预览**: 系统根据参数的ui_hints.realtime属性决定是否在参数变更时自动触发预览更新。
-    - **状态驱动的UI**: 预览区能够智能地展示当前分析状态：如"加载中"、"未检测到结果"或"就绪"。
-    - 当分析就绪时，用户可以在一个统一的预览区中，清晰地查看原始图像、灰度图、二值化图、形态学处理后以及最终标记的**所有**中间阶段结果。
+    - **状态驱动的UI**: 主窗口旁的**结果工作台**能够智能地展示当前分析状态：如"加载中"、"未检测到结果"或"就绪"。
+    - 当分析就绪时，用户可以在一个独立的、多标签的"实时工作台"窗口中，清晰地查看原始图像、灰度图、二值化图、形态学处理后以及最终标记的**所有**中间阶段结果。
 - **参数化定量分析**:
     - **模块化参数面板**: UI会根据所选分析模式（裂缝/孔洞）动态加载专属的参数面板，保持界面整洁。
     - **一键分析**: 配置完成后，点击一下即可完成从目标识别到物理参数计算的全过程。
@@ -59,16 +59,17 @@
 1.  **用户界面层 (UI Layer)**：负责所有用户交互。
     - **`ControlPanel`** 提供一个下拉框来选择分析策略（裂缝/孔洞），并动态加载该策略对应的参数面板。
     - **参数对话框** (如 `ThresholdSettingsDialog`) 负责接收用户输入，并将用户的修改意图**告知** `Controller`。
+    - **结果工作台 (`FractureResultDialog`, `PoreResultDialog`)**: 这些继承自 `BaseResultDialog` 的独立窗口，负责实时展示所有中间和最终的图像结果。
 
 2.  **业务逻辑层 (Business Logic Layer)**：由`Controller`担当，它作为UI和数据层之间的协调者。
     - **参数的唯一事实来源**: `Controller` 维护着所有分析参数的当前状态。它是参数的"唯一修改入口"。
     - **分析器驱动**: `Controller` 不再包含任何特定于裂缝或孔洞的业务逻辑。它将所有分析、结果判空、单位转换等任务，全部委托给当前激活的`Analyzer`。
     - **统一更新机制**: 当参数被修改后，`Controller` 会发射一个统一的 `parameters_updated` 信号，通知所有相关的UI组件进行同步。
-    - **选择性实时预览**: `Controller`根据参数的ui_hints.realtime属性决定是否在参数变更时自动触发预览更新。
+    - **选择性实时预览**: `Controller`根据参数的`ui_hints.realtime`属性决定是否在参数变更时自动触发预览更新，并将包含所有预览图像的载荷发送出去。
 
 3.  **策略/数据处理层 (Strategy/Data Layer)**：由一系列实现`BaseAnalyzer`接口的**具体分析器**组成。每个分析器（如`FractureAnalyzer`, `PoreAnalyzer`）都封装了特定类型分析所需的全套算法、参数、预览策略和后处理逻辑。
 
-这种架构健壮且易于扩展。它通过集中的参数管理和清晰的单向数据流（`UI -> Controller -> UI`），以及将业务决策权完全下放到`Analyzer`，从根本上解决了旧版本中存在的 `TypeError` 和递归更新问题，并为未来添加更多分析模块奠定了坚实的基础。
+这种架构健壮且易于扩展。它通过集中的参数管理和清晰的单向数据流（`UI -> Controller -> 结果工作台`），以及将业务决策权完全下放到`Analyzer`，从根本上解决了旧版本中存在的 `TypeError` 和递归更新问题，并为未来添加更多分析模块奠定了坚实的基础。
 
 **架构图:**
 ```mermaid
@@ -76,7 +77,13 @@ graph TD
     subgraph UI_用户界面层
         MainWindow_主窗口 --> ControlPanel_控制面板
         MainWindow_主窗口 --> ResultPanel_结果面板
-        MainWindow_主窗口 --> MultiStagePreviewWidget_多阶段预览
+        MainWindow_主窗口 --> MainPreview_主预览区
+        
+        MainWindow_主窗口 -- "Creates & Manages" --> ResultDialogs_结果工作台
+        ResultDialogs_结果工作台 -- "Inherits from" --> BaseResultDialog
+        FractureResultDialog -- "Is a" --> ResultDialogs_结果工作台
+        PoreResultDialog -- "Is a" --> ResultDialogs_结果工作台
+        
         ControlPanel_控制面板 --> ParameterPanels_参数面板
     end
 
@@ -96,7 +103,8 @@ graph TD
     ParameterPanels_参数面板 -- "Sends Update Intent" --> Controller_控制器
     Controller_控制器 -- "Signals Update" --> ParameterPanels_参数面板
     Controller_控制器 -- "Signals Completion" --> ResultPanel_结果面板
-    Controller_控制器 -- "Signals State Change" --> MultiStagePreviewWidget_多阶段预览
+    Controller_控制器 -- "Signals State Change" --> ResultDialogs_结果工作台
+    Controller_控制器 -- "Signals Completion" --> MainPreview_主预览区
 ```
 
 **技术栈**:
@@ -113,9 +121,9 @@ graph TD
     2.  参数对话框根据`Analyzer`提供的`ui_hints`元数据，判断是否需要发射`realtime_preview_requested`信号。
     3.  同时，`parameter_changed`信号被发射，告知`ControlPanel`。
     4.  `ControlPanel` 调用 `controller.update_parameter(key, value)`。
-    5.  `Controller` 更新其内部维护的参数字典，然后检查该参数的ui_hints.realtime属性。
-    6.  如果参数需要实时预览，`Controller`会调用`run_preview()`方法触发预览更新。
-    7.  无论是否触发预览，`Controller`都会发射 `parameters_updated` 信号。
-    8.  所有相关的UI组件监听此信号并同步显示，完成一个封闭且无递归风险的循环。
-- **预览状态**: 预览的更新机制是**状态驱动**的。`Controller`在调用`Analyzer`处理后，会发送一个包含当前状态（如 `LOADING`, `READY`, `EMPTY`）和分析器提供的消息的信号。UI层的`MultiStagePreviewWidget`接收此信号后，会根据具体状态来决定如何展示。
+    5.  `Controller` 更新其内部维护的参数字典，然后检查该参数的`ui_hints.realtime`属性。
+    6.  如果参数需要实时预览，`Controller`会调用`run_preview()`方法，该方法会发出包含所有中间预览图的 `preview_state_changed` 信号。
+    7.  `MainWindow`捕获此信号，并调用当前**结果工作台**的 `update_content` 方法，实现实时、多标签的预览。
+    8.  同时，`Controller`也会发射 `parameters_updated` 信号，所有相关的UI组件（如参数面板自身）监听此信号并同步显示，完成一个封闭且无递归风险的循环。
+- **预览状态**: 预览的更新机制是**状态驱动**的。`Controller`在调用`Analyzer`处理后，会发送一个包含当前状态（如 `LOADING`, `READY`, `EMPTY`）和相应载荷的信号。UI层的**结果工作台**接收此信号后，会根据具体状态来决定是显示加载/空状态信息，还是显示包含所有图像的标签页。
 

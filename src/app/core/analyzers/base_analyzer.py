@@ -57,7 +57,7 @@ class BaseAnalyzer(ABC):
             Dict[str, Any]: 一个包含结果的字典，通常应包括
                              可视化图像 ('visualization') 和测量数据 ('measurements')。
         """
-        pass
+        pass 
 
     @abstractmethod
     def is_result_empty(self, results: Dict[str, Any]) -> bool:

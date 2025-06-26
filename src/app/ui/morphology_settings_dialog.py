@@ -76,14 +76,18 @@ class MorphologySettingsDialog(QDialog):
         if not (sender and sender.objectName()): return
 
         param_path = sender.objectName()
+        print(f"[DEBUG MorphDialog] Parameter changed: {param_path} = {value}")
         self.parameter_changed.emit(param_path, value)
 
         # 检查是否需要触发实时预览
         current_params = self.controller.get_current_parameters()
+        print(f"[DEBUG MorphDialog] All current params from controller: {current_params}")
         param_group = param_path.split('.')[0] # e.g., 'morphology'
         
         hints = current_params.get(param_group, {}).get('ui_hints', {})
+        print(f"[DEBUG MorphDialog] Retrieved hints for group '{param_group}': {hints}")
         if hints.get('realtime', False):
+            print(f"[DEBUG MorphDialog] Realtime hint is True. Emitting request.")
             self.realtime_preview_requested.emit()
 
     def update_controls(self, params: dict):

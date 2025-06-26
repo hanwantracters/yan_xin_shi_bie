@@ -98,6 +98,7 @@ class Controller(QObject):
             
     def update_parameter(self, param_path: str, value: Any):
         """更新一个分析参数，并触发预览。"""
+        print(f"[DEBUG Controller] Attempting to update parameter: {param_path} with value: {value}")
         keys = param_path.split('.')
         d = self.analysis_params
         for key in keys[:-1]:
@@ -109,6 +110,7 @@ class Controller(QObject):
 
     def request_realtime_preview(self):
         """响应UI的请求，执行一次预览。"""
+        print("[DEBUG Controller] Realtime preview requested by UI, starting run_preview.")
         print("[DEBUG Controller] Realtime preview requested by UI.")
         self.run_preview()
 
@@ -194,6 +196,10 @@ class Controller(QObject):
     def get_current_dpi(self):
         return self.current_dpi
 
+    def get_current_analyzer_id(self) -> str:
+        """获取当前激活的分析器的ID。"""
+        return self.active_analyzer.get_id()
+
     def get_current_parameters(self) -> Dict[str, Any]:
-        """获取当前激活分析器的参数。"""
+        """获取当前分析器的所有参数。"""
         return self.analysis_params

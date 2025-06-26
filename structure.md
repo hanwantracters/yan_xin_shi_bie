@@ -18,13 +18,17 @@ rock-fracture-analyzer/
 │       │   ├── main_window.py       # UI层: 主窗口
 │       │   ├── control_panel.py     # UI层: 控制面板，负责模式选择和参数面板切换
 │       │   ├── result_panel.py      # UI层: 结果面板组件
-│       │   ├── multi_stage_preview_widget.py # UI层: 多阶段预览窗口
+│       │   ├── multi_stage_preview_widget.py # UI层: 简化的单图像预览窗口
 │       │   ├── measurement_dialog.py# UI层: 测量对话框组件
 │       │   ├── morphology_settings_dialog.py # UI层: 形态学参数对话框
 │       │   ├── filtering_settings_dialog.py  # UI层: 过滤参数对话框
 │       │   ├── threshold_settings_dialog.py  # UI层: 阈值参数对话框
 │       │   ├── style_manager.py     # UI层: 样式表管理器
-│       │   ├── dialogs/             # UI层: 存放各种设置对话框
+│       │   ├── dialogs/             # UI层: 存放各种设置与结果对话框
+│       │   │   ├── __init__.py
+│       │   │   ├── base_result_dialog.py # UI层: 可扩展的结果对话框基类
+│       │   │   ├── fracture_result_dialog.py # UI层: 裂缝分析的结果工作台
+│       │   │   ├── pore_result_dialog.py # UI层: 孔洞分析的结果工作台
 │       │   │   └── pore_filtering_dialog.py  # UI层: 孔洞过滤参数对话框
 │       │   └── parameter_panels/    # UI层: 存放不同分析器对应的参数面板
 │       │       ├── __init__.py

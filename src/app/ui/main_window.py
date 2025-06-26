@@ -26,6 +26,8 @@ from .result_panel import ResultPanel
 from .multi_stage_preview_widget import MultiStagePreviewWidget
 from .measurement_dialog import MeasurementDialog
 from .style_manager import style_manager  # 导入样式管理器
+from .dialogs.fracture_result_dialog import FractureResultDialog
+from .dialogs.pore_result_dialog import PoreResultDialog
 
 # 导入控制器和枚举
 from ..core.controller import Controller
@@ -50,6 +52,11 @@ class MainWindow(QMainWindow):
         super().__init__()
         # 创建控制器
         self.controller = Controller()
+        self.current_result_dialog = None
+        self.result_dialog_classes = {
+            'fracture': FractureResultDialog,
+            'pore_watershed': PoreResultDialog
+        }
         self._init_ui()
         
     def _init_ui(self):
@@ -147,11 +154,11 @@ class MainWindow(QMainWindow):
         self.control_panel.measureToolClicked.connect(self._on_measure_tool)
         self.control_panel.import_parameters_requested.connect(self._handle_import_parameters)
         self.control_panel.export_parameters_requested.connect(self._handle_export_parameters)
-        self.control_panel.analyzer_changed.connect(self.main_preview_window.clear_all)
+        self.control_panel.analyzer_changed.connect(self._on_analyzer_changed)
         
         # 连接控制器信号
         self.controller.analysis_complete.connect(self._on_analysis_complete)
-        self.controller.preview_state_changed.connect(self.main_preview_window.display_state)
+        self.controller.preview_state_changed.connect(self._on_preview_updated)
         self.controller.error_occurred.connect(self._on_error_occurred)
         
     def _on_menu_open_image(self):
@@ -188,16 +195,9 @@ class MainWindow(QMainWindow):
             # 加载成功后，立即在预览窗口中显示原始图像
             original_image = self.controller.get_current_image()
             if original_image is not None:
-                # 构造一个符合MultiStagePreviewWidget期望的READY状态载荷
-                payload = {
-                    'state': PreviewState.READY,
-                    'payload': {
-                        ResultKeys.PREVIEWS.value: {
-                            StageKeys.ORIGINAL.value: original_image
-                        }
-                    }
-                }
-                self.main_preview_window.display_state(payload)
+                self.main_preview_window.show_image(original_image)
+                # 同时触发结果对话框的创建和显示
+                self._on_analyzer_changed()
 
             print(f"图像已成功加载: {file_path}")
         else:
@@ -220,7 +220,7 @@ class MainWindow(QMainWindow):
         QApplication.setOverrideCursor(Qt.WaitCursor)
         
         # 直接调用控制器的分析方法，无需传递参数
-        self.controller.run_fracture_analysis()
+        self.controller.run_full_analysis()
         
         QApplication.restoreOverrideCursor()
         
@@ -248,33 +248,20 @@ class MainWindow(QMainWindow):
         Args:
             results (dict): 分析结果字典。
         """
-        QApplication.restoreOverrideCursor()
-        self.statusBar().showMessage("分析完成！")
+        self.statusBar().showMessage("分析完成")
         
-        # 将所有图像结果（预览+最终）传递给预览组件进行显示
-        previews = results.get('previews', {})
-        
-        # 添加最终的可视化结果图
-        if 'visualization' in results:
-            previews[StageKeys.DETECTION.value] = results['visualization']
-        
-        # 添加原始图像，确保它总是显示
-        original_image = self.controller.get_current_image()
-        if original_image is not None:
-            previews[StageKeys.ORIGINAL.value] = original_image
-
-        # 构建载荷并更新预览窗口状态
-        payload = {
-            'state': PreviewState.READY,
-            'payload': { 'previews': previews }
-        }
-        self.main_preview_window.display_state(payload)
-        
-        # 将量化分析数据更新到结果面板
+        # 将量化结果分发给结果面板
         self.result_panel.update_analysis_results(results.get('measurements', {}))
+
+        # 将完整结果（包括预览图和最终图像）分发给工作台
+        if self.current_result_dialog:
+            self.current_result_dialog.update_content({
+                'state': PreviewState.READY,
+                'payload': results
+            })
         
     def _on_error_occurred(self, message: str):
-        """错误处理函数。"""
+        """错误发生处理函数。"""
         # 恢复光标，以防错误发生在耗时操作期间
         QApplication.restoreOverrideCursor()
         
@@ -296,4 +283,38 @@ class MainWindow(QMainWindow):
             "版本 1.0\n\n"
             "一个用于自动分析岩心图像裂缝的桌面应用。\n"
             "基于 PyQt5 和 OpenCV 构建。"
-        ) 
+        )
+
+    def _on_analyzer_changed(self):
+        """处理分析器切换的槽函数。"""
+        # 清空旧的预览和结果
+        self.main_preview_window.clear()
+        self.result_panel.clear_results()
+        
+        # 如果有图像，则显示原图
+        original_image = self.controller.get_current_image()
+        if original_image is not None:
+            self.main_preview_window.show_image(original_image)
+
+        # 根据当前分析器创建新的结果对话框
+        analyzer_id = self.controller.get_current_analyzer_id()
+        if analyzer_id in self.result_dialog_classes:
+            # 如果已存在一个对话框，先关闭并删除
+            if self.current_result_dialog:
+                self.current_result_dialog.close()
+                self.current_result_dialog.deleteLater()
+
+            dialog_class = self.result_dialog_classes[analyzer_id]
+            self.current_result_dialog = dialog_class(self.controller, self)
+            self.current_result_dialog.show()
+        
+    def _on_preview_updated(self, payload: dict):
+        """处理实时预览更新的槽函数。"""
+        if self.current_result_dialog:
+            self.current_result_dialog.update_content(payload)
+        
+    def closeEvent(self, event):
+        """确保在主窗口关闭时，结果对话框也一并关闭。"""
+        if self.current_result_dialog:
+            self.current_result_dialog.close()
+        super().closeEvent(event) 

@@ -7,38 +7,35 @@
 -   **`main_window.py`**: 应用程序的主窗口，作为所有UI组件的容器。
 -   **`control_panel.py`**: 主控制面板，负责模式选择和参数面板的动态加载。
 -   **`result_panel.py`**: 结果显示面板。
--   **`multi_stage_preview_widget.py`**: 一个高级预览组件，能够根据控制器发送的状态（如加载中、就绪、无结果）自动管理和展示多个分析阶段的图像。
--   **`dialogs/`**: 存放各类可复用或独立的参数设置对话框。
-    -   `threshold_settings_dialog.py`, `morphology_settings_dialog.py`
-    -   `pore_filtering_dialog.py`: "孔洞分析"模式专用的过滤参数对话框。
--   **`measurement_dialog.py`**: (待实现) 手动测量工具的对话框。
--   **`style_manager.py`**: 样式管理器，集中管理应用的QSS样式表。
+-   **`multi_stage_preview_widget.py`**: 核心的**多阶段预览窗口**，能够响应实时参数调整，并以多标签页的形式展示从原始图像到最终结果的所有中间处理步骤。
+-   **`measurement_dialog.py`**: 一个用于手动测量的简单对话框。
+-   **`style_manager.py`**: 集中管理应用程序的QSS样式，实现主题切换。
 -   **`parameter_panels/`**: 存放不同分析器对应的参数面板的容器目录。
     -   `fracture_params_panel.py`: "裂缝分析"模式对应的参数面板。
     -   `pore_params_panel.py`: "孔洞分析"模式对应的参数面板。
+-   **`dialogs/`**:
+    - `base_result_dialog.py`: 新增的**结果工作台基类**。它定义了一个标准的、带有多标签页的对话框结构，并实现了处理不同预览状态（加载中、就绪、空）的通用逻辑。
+    - `fracture_result_dialog.py`: 裂缝分析的**专属工作台**。继承自 `BaseResultDialog`，并添加了裂缝分析特有的结果标签页。
+    - `pore_result_dialog.py`: 孔洞分析的**专属工作台**。继承自 `BaseResultDialog`，并添加了孔洞分析特有的结果标签页。
 
-## 核心交互流程: 参数修改与实时预览
+## 核心交互流程
 
-系统采用一个健壮的、由分析器驱动的单向数据流来处理参数修改。
+1. **加载图像**: 用户通过`MainWindow`菜单或`ControlPanel`上的按钮加载图像。
+2. **选择分析器**: 用户在`ControlPanel`中通过下拉框选择"裂缝分析"或"孔洞分析"。
+3. **参数调整**: `ControlPanel`会动态加载与所选分析器对应的参数面板（例如 `FractureParameterPanel`）。当用户调整参数时：
+    - 参数面板发射 `parameter_changed` 和 `realtime_preview_requested` 信号。
+    - `ControlPanel` 捕获信号并调用 `Controller` 的方法来更新参数。
+    - `Controller` 在更新后，如果参数标记为 `realtime`，则立即运行预览分析。
+    - `Controller` 发射 `preview_state_changed` 信号，其中包含所有中间步骤的图像数据。
+    - **`MainWindow`** 捕获此信号，并将数据传递给当前激活的**结果工作台**（例如 `FractureResultDialog`）。
+    - 结果工作台的 `update_content` 方法被调用，它根据接收到的状态（如 `READY`）和图像数据，动态更新其内部的标签页。
+4. **执行分析**: 用户点击"开始分析"按钮，触发完整的分析流程。
+5. **显示结果**: 分析完成后，`Controller` 发射 `analysis_complete` 信号，`MainWindow`捕获后：
+    - 将最终的**定量测量数据**发送给 `ResultPanel` 进行表格和摘要展示。
+    - 将包含**最终可视化图像**的完整结果集发送给**结果工作台**，更新其"最终结果"标签页。
+    - 将最终的可视化图像也显示在 `MainWindow` 的主预览区。
 
-1.  **用户输入**: 用户在某个参数对话框中调整一个控件（如`QSlider`）。
-2.  **信号发射**: 该控件的信号被连接到一个本地的 `_on_parameter_changed` 方法。
-3.  **预览决策与信号冒泡**:
-    -   `_on_parameter_changed` 方法会检查`Controller`中当前`Analyzer`为该参数定义的`ui_hints`元数据。
-    -   如果`'realtime'`为`True`，对话框会发射一个`realtime_preview_requested`信号。
-    -   同时，一个包含参数变更详情的`parameter_changed`信号也会被发射。
-4.  **意图告知 `Controller`**: `ControlPanel`（作为参数面板的创建者）捕获这两个信号：
-    -   `parameter_changed`信号会调用`controller.update_parameter(key, value)`。
-    -   `realtime_preview_requested`信号会调用`controller.request_realtime_preview()`。
-5.  **`Controller` 处理与广播**: `Controller` 更新其内部参数字典，然后广播一个全局的 `parameters_updated` 信号。
-6.  **UI同步**: 所有相关的UI组件（包括打开的参数对话框）都监听 `parameters_updated` 信号，并调用各自的 `update_controls` 方法来刷新界面显示。
-
-这个流程形成了一个封闭、可预测的循环 (`UI -> Controller -> UI`)，确保了数据的一致性，同时将实时预览的决策权下放给了最了解业务的`Analyzer`。
-
-## 核心交互流程: 最终分析
-
--   **加载图像**: 用户点击"加载图像"后，`MainWindow` 会响应，调用 `Controller` 加载图像，并立刻在 `MultiStagePreviewWidget` 中显示原始图像。**不会触发自动分析**。
--   **最终分析**: 用户点击"一键执行分析"后，`controller.run_full_analysis()` 被调用，执行完整的分析流程，并通过信号将最终结果分发给 `ResultPanel` 和 `MultiStagePreviewWidget`。
+这种设计将重量级的、多阶段的预览功能从主窗口中分离出来，放到了独立的、可扩展的对话框中，使得主窗口结构更清晰，也为未来添加更多复杂的分析模块提供了便利。
 
 ## 设计原则
 
