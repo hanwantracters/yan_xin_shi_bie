@@ -4,60 +4,43 @@
 
 ## 组件结构
 
--   **`main_window.py`**: 应用程序的主窗口，作为所有UI组件的容器。它负责整体布局、菜单栏管理，并组装其他所有UI组件。
--   **`control_panel.py`**: 主控制面板。它不再包含具体的参数控件，而是提供了一个**分析模式选择器(QComboBox)**和一个**参数面板区域(QStackedWidget)**。
--   **`result_panel.py`**: 结果显示面板，以摘要和详细数据表格两种形式清晰地展示最终的量化分析结果。
--   **`multi_stage_preview_widget.py`**: 一个高级预览组件，能够根据控制器发送的状态（如加载中、就绪、无结果）自动管理和展示多个分析阶段（原始、二值化、结果等）的图像。
+-   **`main_window.py`**: 应用程序的主窗口，作为所有UI组件的容器。
+-   **`control_panel.py`**: 主控制面板，负责模式选择和参数面板的动态加载。
+-   **`result_panel.py`**: 结果显示面板。
+-   **`multi_stage_preview_widget.py`**: 一个高级预览组件，能够根据控制器发送的状态（如加载中、就绪、无结果）自动管理和展示多个分析阶段的图像。
+-   **`dialogs/`**: 存放各类可复用或独立的参数设置对话框。
+    -   `threshold_settings_dialog.py`, `morphology_settings_dialog.py`
+    -   `pore_filtering_dialog.py`: "孔洞分析"模式专用的过滤参数对话框。
 -   **`measurement_dialog.py`**: (待实现) 手动测量工具的对话框。
 -   **`style_manager.py`**: 样式管理器，集中管理应用的QSS样式表。
--   **`parameter_panels/`**:
-    -   `fracture_params_panel.py`: "裂缝分析"模式对应的参数面板，包含所有与裂缝分析相关的UI控件（如阈值算法选择、形态学参数调节等）。
+-   **`parameter_panels/`**: 存放不同分析器对应的参数面板的容器目录。
+    -   `fracture_params_panel.py`: "裂缝分析"模式对应的参数面板。
+    -   `pore_params_panel.py`: "孔洞分析"模式对应的参数面板。
 
-## 核心交互流程
+## 核心交互流程: 参数修改与实时预览
 
-1.  **初始化与模式选择**:
-    -   `ControlPanel`在初始化时，主动调用`Controller`的`get_registered_analyzers()`方法，获取所有可用的分析器列表。
-    -   列表被填充到分析模式选择器（下拉框）中。
-    -   当用户通过下拉框选择一个分析模式（如"裂缝分析"）时，`ControlPanel`会：
-        1.  通知`Controller`设置对应的分析器为**激活状态**。
-        2.  实例化该分析模式对应的**参数面板**（如`FractureParamsPanel`）。
-        3.  将新创建的参数面板显示在界面上。
+系统采用一个健壮的、由分析器驱动的单向数据流来处理参数修改。
 
-2.  **实时参数调整**:
-    -   用户在参数面板上调整参数，触发`Controller`的`run_preview`方法。
-    -   `Controller`不再发送一系列独立的预览图像，而是发送一个包含**当前状态**的信号`preview_state_changed`。
-    -   信号的载荷是一个字典，格式为`{'state': PreviewState, 'payload': ...}`，其中`state`可以是`LOADING`、`READY`、`EMPTY`或`ERROR`。
-    -   `MainWindow`将此信号直接连接到`MultiStagePreviewWidget`的`display_state`槽。
-    -   `MultiStagePreviewWidget`根据接收到的状态，自行决定是显示加载动画、"无结果"提示，还是从`payload`中提取并展示所有阶段的预览图像。
+1.  **用户输入**: 用户在某个参数对话框中调整一个控件（如`QSlider`）。
+2.  **信号发射**: 该控件的信号被连接到一个本地的 `_on_parameter_changed` 方法。
+3.  **预览决策与信号冒泡**:
+    -   `_on_parameter_changed` 方法会检查`Controller`中当前`Analyzer`为该参数定义的`ui_hints`元数据。
+    -   如果`'realtime'`为`True`，对话框会发射一个`realtime_preview_requested`信号。
+    -   同时，一个包含参数变更详情的`parameter_changed`信号也会被发射。
+4.  **意图告知 `Controller`**: `ControlPanel`（作为参数面板的创建者）捕获这两个信号：
+    -   `parameter_changed`信号会调用`controller.update_parameter(key, value)`。
+    -   `realtime_preview_requested`信号会调用`controller.request_realtime_preview()`。
+5.  **`Controller` 处理与广播**: `Controller` 更新其内部参数字典，然后广播一个全局的 `parameters_updated` 信号。
+6.  **UI同步**: 所有相关的UI组件（包括打开的参数对话框）都监听 `parameters_updated` 信号，并调用各自的 `update_controls` 方法来刷新界面显示。
 
-3.  **最终分析**:
-    -   用户在`ControlPanel`点击"一键执行分析"。
-    -   `Controller`调用当前**激活分析器**的`run_analysis`方法。
-    -   分析完成后，`Controller`发出`analysis_complete`信号，其中包含最终的量化数据和可视化结果。
-    -   `ResultPanel`接收此信号并更新其显示。
+这个流程形成了一个封闭、可预测的循环 (`UI -> Controller -> UI`)，确保了数据的一致性，同时将实时预览的决策权下放给了最了解业务的`Analyzer`。
+
+## 核心交互流程: 最终分析
+
+-   **加载图像**: 用户点击"加载图像"后，`MainWindow` 会响应，调用 `Controller` 加载图像，并立刻在 `MultiStagePreviewWidget` 中显示原始图像。**不会触发自动分析**。
+-   **最终分析**: 用户点击"一键执行分析"后，`controller.run_full_analysis()` 被调用，执行完整的分析流程，并通过信号将最终结果分发给 `ResultPanel` 和 `MultiStagePreviewWidget`。
 
 ## 设计原则
 
--   **UI与核心逻辑分离**: UI层只负责发出"参数变更"的信号，并将`Controller`的状态信号直接传递给专门的预览组件。
--   **封装预览逻辑**: `MultiStagePreviewWidget`完全封装了处理不同预览状态（加载中、成功、失败、无结果）的所有逻辑，极大地简化了`MainWindow`。
--   **可扩展性**: 添加新的分析类型时，只需创建新的参数面板和`Analyzer`，UI的整体交互逻辑保持不变。
-
-## 预览窗口设计 (重构后)
-
-系统现在使用单一的`MultiStagePreviewWidget`组件来负责所有预览显示。它采用**状态驱动**的设计：
--   **监听状态**: 它不直接接收图像，而是监听`Controller`发出的`preview_state_changed`信号。
--   **自我管理**: 根据接收到的`state`值，它内部管理着多个`PreviewWindow`实例（可能在标签页中），并负责：
-    -   显示"加载中"的提示。
-    -   在`READY`状态时，从`payload`中解析出所有阶段的图像并分别显示。
-    -   显示"未检测到裂缝"或错误信息。
-    -   在切换分析器时，清空所有预览。
-这种设计将复杂的UI状态管理逻辑从`MainWindow`中移除，使其高度内聚和可重用。
-
-## 控制面板设计
-
-控制面板(`ControlPanel`)提供了以下功能：
-- 图像加载按钮
-- 开始分析按钮
-- 阈值模式选择(全局阈值、自适应阈值、Otsu阈值)
-- 阈值参数调整滑块
-- 测量工具按钮 
+-   **UI与核心逻辑分离**: UI组件不直接修改业务状态，只负责发出"参数变更意图"和"请求预览"的信号。
+-   **`Controller`作为中枢**: `

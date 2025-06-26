@@ -16,18 +16,23 @@ from PyQt5.QtWidgets import (
     QCheckBox
 )
 
+from src.app.core.controller import Controller
+
 class FilteringSettingsDialog(QDialog):
     """用于设置过滤与合并参数的对话框。"""
     
     parameter_changed = Signal(str, object)
+    realtime_preview_requested = Signal()
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, controller: Controller, parent: Optional[QWidget] = None):
         """初始化对话框。
 
         Args:
+            controller (Controller): 应用程序控制器实例。
             parent (Optional[QWidget]): 父窗口对象。
         """
         super().__init__(parent)
+        self.controller = controller
         
         self.setWindowTitle("调整过滤与合并参数")
         self.setMinimumWidth(300)
@@ -86,6 +91,14 @@ class FilteringSettingsDialog(QDialog):
         
         if value is not None:
             self.parameter_changed.emit(param_path, value)
+
+            # 检查是否需要触发实时预览
+            current_params = self.controller.get_current_parameters()
+            param_group = param_path.split('.')[0] # e.g., 'filtering' or 'merging'
+            
+            hints = current_params.get(param_group, {}).get('ui_hints', {})
+            if hints.get('realtime', False):
+                self.realtime_preview_requested.emit()
 
     def update_controls(self, params: dict):
         """根据给定的参数字典更新所有UI控件的值。"""

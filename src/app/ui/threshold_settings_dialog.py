@@ -19,20 +19,23 @@ from PyQt5.QtWidgets import (
     QDoubleSpinBox
 )
 
-from ..core.controller import Controller
+from src.app.core.controller import Controller
 
 class ThresholdSettingsDialog(QDialog):
     """用于设置阈值参数的对话框。"""
     
     parameter_changed = Signal(str, object)
+    realtime_preview_requested = Signal()
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, controller: Controller, parent: Optional[QWidget] = None):
         """初始化对话框。
 
         Args:
+            controller (Controller): 应用程序控制器实例。
             parent (Optional[QWidget]): 父窗口对象。
         """
         super().__init__(parent)
+        self.controller = controller
         
         self.setWindowTitle("调整二值化参数")
         self.setMinimumWidth(350)
@@ -99,20 +102,18 @@ class ThresholdSettingsDialog(QDialog):
     def _create_niblack_sauvola_widget(self, is_sauvola: bool) -> QWidget:
         widget = QWidget(); layout = QFormLayout(widget)
         
-        ws_obj_name = "threshold.sauvola_window_size" if is_sauvola else "threshold.niblack_window_size"
-        ws_slider = QSlider(Qt.Horizontal, objectName=ws_obj_name)
+        ws_slider = QSlider(Qt.Horizontal, objectName="threshold.window_size")
         ws_slider.setRange(3, 101); ws_slider.setSingleStep(2)
         ws_label = QLabel()
         ws_slider.valueChanged.connect(ws_label.setNum)
         layout.addRow("Window Size:", ws_slider); layout.addRow("当前值:", ws_label)
 
-        k_obj_name = "threshold.sauvola_k" if is_sauvola else "threshold.niblack_k"
-        k_spinbox = QDoubleSpinBox(objectName=k_obj_name)
+        k_spinbox = QDoubleSpinBox(objectName="threshold.k")
         k_spinbox.setRange(-2.0, 2.0); k_spinbox.setSingleStep(0.05)
         layout.addRow("K Value:", k_spinbox)
         
         if is_sauvola:
-            r_slider = QSlider(Qt.Horizontal, objectName="threshold.sauvola_r"); r_slider.setRange(0, 255)
+            r_slider = QSlider(Qt.Horizontal, objectName="threshold.r"); r_slider.setRange(0, 255)
             r_label = QLabel()
             r_slider.valueChanged.connect(r_label.setNum)
             layout.addRow("R Value:", r_slider); layout.addRow("当前值:", r_label)
@@ -127,7 +128,7 @@ class ThresholdSettingsDialog(QDialog):
             if isinstance(widget, QComboBox):
                 widget.currentIndexChanged.connect(self._on_parameter_changed)
             elif isinstance(widget, QSlider):
-                widget.valueChanged.connect(self._on_parameter_changed)
+                widget.sliderReleased.connect(self._on_parameter_changed)
             elif isinstance(widget, QDoubleSpinBox):
                 widget.valueChanged.connect(self._on_parameter_changed)
 
@@ -157,6 +158,14 @@ class ThresholdSettingsDialog(QDialog):
         if value is not None:
             self.parameter_changed.emit(param_path, value)
 
+            # 检查是否需要触发实时预览
+            current_params = self.controller.get_current_parameters()
+            param_group = param_path.split('.')[0] # e.g., 'threshold'
+            
+            hints = current_params.get(param_group, {}).get('ui_hints', {})
+            if hints.get('realtime', False):
+                self.realtime_preview_requested.emit()
+
     def update_controls(self, params: dict):
         print("DEBUG Dialog: update_controls CALLED.")
         p = params.get('threshold', {})
@@ -173,14 +182,12 @@ class ThresholdSettingsDialog(QDialog):
             self.threshold_method_combo.setCurrentIndex(rev_map.get(method, 0))
             
             # Set values for all widgets regardless of visibility
-            self.findChild(QSlider, "threshold.global_value").setValue(p.get('global_value', 127))
-            self.findChild(QSlider, "threshold.adaptive_block_size").setValue(p.get('adaptive_block_size', 11))
-            self.findChild(QSlider, "threshold.adaptive_c_value").setValue(p.get('adaptive_c_value', 2))
-            self.findChild(QSlider, "threshold.niblack_window_size").setValue(p.get('niblack_window_size', 25))
-            self.findChild(QDoubleSpinBox, "threshold.niblack_k").setValue(p.get('niblack_k', -0.2))
-            self.findChild(QSlider, "threshold.sauvola_window_size").setValue(p.get('sauvola_window_size', 25))
-            self.findChild(QDoubleSpinBox, "threshold.sauvola_k").setValue(p.get('sauvola_k', 0.2))
-            self.findChild(QSlider, "threshold.sauvola_r").setValue(p.get('sauvola_r', 128))
+            self.findChild(QSlider, "threshold.global_value").setValue(p.get('value', 127))
+            self.findChild(QSlider, "threshold.adaptive_block_size").setValue(p.get('block_size', 11))
+            self.findChild(QSlider, "threshold.adaptive_c_value").setValue(p.get('c', 2))
+            self.findChild(QSlider, "threshold.window_size").setValue(p.get('window_size', 25))
+            self.findChild(QDoubleSpinBox, "threshold.k").setValue(p.get('k', -0.2))
+            self.findChild(QSlider, "threshold.r").setValue(p.get('r', 128))
         finally:
             for widget in all_param_widgets: widget.blockSignals(False)
             

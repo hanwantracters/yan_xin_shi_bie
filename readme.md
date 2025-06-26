@@ -1,24 +1,27 @@
-# 岩心裂缝分析软件
+# 岩心裂缝与孔洞分析软件
 
 ## 项目简介
 
-**岩心裂缝分析软件**是一个轻量级的桌面应用程序，旨在自动化识别和量化分析岩心图像中的裂缝。它提供了一套完整的交互式工具，用户可以从加载图像开始，通过实时参数调优，最终获得精确的物理分析数据和可视化结果。
+**岩心裂缝与孔洞分析软件**是一个轻量级的桌面应用程序，旨在自动化识别和量化分析岩心图像中的裂缝与孔洞。它提供了一套完整的交互式工具，用户可以从加载图像开始，通过实时参数调优，最终获得精确的物理分析数据和可视化结果。
 
 ## 功能特点
 
 - **多格式图像支持**: 支持加载 `.jpg`, `.png`, `.bmp` 等常用图像格式，并能自动从元数据中读取DPI信息用于物理单位换算。
-- **高级裂缝识别**:
-    - **多种阈值算法**: 提供全局阈值、Otsu、自适应高斯、以及更适用于不均匀光照的Niblack和Sauvola算法。
-    - **精细形态学控制**: 用户可通过独立对话框微调开/闭运算的核大小、形状及迭代次数。
-    - **智能轮廓过滤**: 可根据物理单位（如最小长度mm）和几何形态（如最小长宽比）对检测到的轮廓进行精确过滤。
-    - **智能轮廓合并**: (待实现) 可选的智能合并功能，用于连接邻近的断裂轮廓。
-- **状态驱动的实时预览**:
-    - 任何参数调整都会触发一次完整的分析预览。
-    - UI能够智能地展示当前分析状态：如"加载中"、"未检测到结果"或"就绪"。
-    - 当分析就绪时，用户可以在一个多标签页视图中，清晰地查看原始图像、灰度图、二值化图、形态学处理后以及最终标记的**所有**中间阶段结果。
+- **双重分析能力**:
+    - **高级裂缝识别**:
+        - **多种阈值算法**: 提供全局阈值、Otsu、自适应高斯、以及更适用于不均匀光照的Niblack和Sauvola算法。
+        - **精细形态学控制**: 用户可通过独立对话框微调开/闭运算的核大小、形状及迭代次数。
+        - **智能轮廓过滤**: 可根据物理单位（如最小长度mm）和几何形态（如最小长宽比）对检测到的轮廓进行精确过滤。
+    - **高级孔洞识别**:
+        - **分水岭算法**: (待实现) 采用先进的分水岭算法，能有效分割粘连的孔洞，确保计数和形态分析的准确性。
+        - **科学的筛选标准**: 基于面积和坚实度(Solidity)进行筛选，比传统的圆度筛选更具鲁棒性，能准确识别各种形状的孔洞。
+- **智能实时预览**:
+    - **选择性实时预览**: 系统根据参数的ui_hints.realtime属性决定是否在参数变更时自动触发预览更新。
+    - **状态驱动的UI**: 预览区能够智能地展示当前分析状态：如"加载中"、"未检测到结果"或"就绪"。
+    - 当分析就绪时，用户可以在一个统一的预览区中，清晰地查看原始图像、灰度图、二值化图、形态学处理后以及最终标记的**所有**中间阶段结果。
 - **参数化定量分析**:
-    - **模块化参数面板**: 复杂的参数设置被封装在独立的面板中，保持主界面整洁。
-    - **一键分析**: 配置完成后，点击一下即可完成从裂缝识别到物理参数计算的全过程，输出包括：裂缝数量、总面积(mm²)、总长度(mm)，以及每条裂缝的详细数据。
+    - **模块化参数面板**: UI会根据所选分析模式（裂缝/孔洞）动态加载专属的参数面板，保持界面整洁。
+    - **一键分析**: 配置完成后，点击一下即可完成从目标识别到物理参数计算的全过程。
 - **手动测量工具**: (待实现) 提供一个简单的手动测量工具，用户可以在图像上绘制直线以快速测量任意两点间的物理距离。
 - **参数导入/导出**:
     - 支持将整套分析配置保存为JSON文件，方便重复使用和分享。
@@ -51,13 +54,21 @@
 
 ## 技术架构
 
-本软件采用基于**策略设计模式 (Strategy Pattern)** 的分层架构，将不同的分析类型（如裂缝、孔洞）解耦为可互换的**分析器 (Analyzer)**。
+本软件采用基于**策略设计模式 (Strategy Pattern)** 的分层架构，并通过**分析器驱动的参数与预览模型**来确保数据流的稳定性和可维护性。
 
-1.  **用户界面层 (UI Layer)**：负责所有用户交互。`ControlPanel` 提供一个下拉框来选择分析策略，并动态加载该策略对应的参数面板。
-2.  **业务逻辑层 (Business Logic Layer)**：由`Controller`担当，它作为UI和数据层之间的协调者。它管理着所有可用的分析器，并根据用户的选择设置当前激活的分析器。它不关心分析的具体实现，只负责调用激活分析器的接口。
-3.  **策略/数据处理层 (Strategy/Data Layer)**：由一系列实现`BaseAnalyzer`接口的**具体分析器**组成。每个分析器（如`FractureAnalyzer`）都封装了特定类型分析所需的全套算法、参数和处理流水线。
+1.  **用户界面层 (UI Layer)**：负责所有用户交互。
+    - **`ControlPanel`** 提供一个下拉框来选择分析策略（裂缝/孔洞），并动态加载该策略对应的参数面板。
+    - **参数对话框** (如 `ThresholdSettingsDialog`) 负责接收用户输入，并将用户的修改意图**告知** `Controller`。
 
-这种架构使得添加新的分析功能变得非常容易，只需创建一个新的分析器类和一个对应的UI参数面板即可。
+2.  **业务逻辑层 (Business Logic Layer)**：由`Controller`担当，它作为UI和数据层之间的协调者。
+    - **参数的唯一事实来源**: `Controller` 维护着所有分析参数的当前状态。它是参数的"唯一修改入口"。
+    - **分析器驱动**: `Controller` 不再包含任何特定于裂缝或孔洞的业务逻辑。它将所有分析、结果判空、单位转换等任务，全部委托给当前激活的`Analyzer`。
+    - **统一更新机制**: 当参数被修改后，`Controller` 会发射一个统一的 `parameters_updated` 信号，通知所有相关的UI组件进行同步。
+    - **选择性实时预览**: `Controller`根据参数的ui_hints.realtime属性决定是否在参数变更时自动触发预览更新。
+
+3.  **策略/数据处理层 (Strategy/Data Layer)**：由一系列实现`BaseAnalyzer`接口的**具体分析器**组成。每个分析器（如`FractureAnalyzer`, `PoreAnalyzer`）都封装了特定类型分析所需的全套算法、参数、预览策略和后处理逻辑。
+
+这种架构健壮且易于扩展。它通过集中的参数管理和清晰的单向数据流（`UI -> Controller -> UI`），以及将业务决策权完全下放到`Analyzer`，从根本上解决了旧版本中存在的 `TypeError` 和递归更新问题，并为未来添加更多分析模块奠定了坚实的基础。
 
 **架构图:**
 ```mermaid
@@ -70,32 +81,41 @@ graph TD
     end
 
     subgraph Core_核心逻辑层
-        Controller_控制器 --> BaseAnalyzer_分析器基类
+        Controller_控制器 -- "Delegates to" --> BaseAnalyzer_分析器基类
         Controller_控制器 -- "Manages" --> Analyzers_策略
         Analyzers_策略 -- "Implements" --> BaseAnalyzer_分析器基类
         FractureAnalyzer_裂缝分析器 -- "Is a" --> Analyzers_策略
+        PoreAnalyzer_孔洞分析器 -- "Is a" --> Analyzers_策略
         FractureAnalyzer_裂缝分析器 -- "Uses" --> ImageOperations_图像操作
-        FractureAnalyzer_裂缝分析器 -- "Uses" --> Constants_常量
+        PoreAnalyzer_孔洞分析器 -- "Uses" -- "self" --> PoreAnalyzer_孔洞分析器
         Controller_控制器 -- "Uses" --> UnitConverter_单位转换器
-        Controller_控制器 -- "Uses" --> Constants_常量
     end
 
     %% Cross-layer Dependencies
-    ControlPanel_控制面板 -- "Triggers" --> Controller_控制器
-    ParameterPanels_参数面板 -- "Signals to" --> Controller_控制器
-    Controller_控制器 -- "Signals to" --> ResultPanel_结果面板
-    Controller_控制器 -- "Signals to" --> MultiStagePreviewWidget_多阶段预览
-    MultiStagePreviewWidget_多阶段预览 -- "Uses" --> Constants_常量
+    ControlPanel_控制面板 -- "Triggers Analysis" --> Controller_控制器
+    ParameterPanels_参数面板 -- "Sends Update Intent" --> Controller_控制器
+    Controller_控制器 -- "Signals Update" --> ParameterPanels_参数面板
+    Controller_控制器 -- "Signals Completion" --> ResultPanel_结果面板
+    Controller_控制器 -- "Signals State Change" --> MultiStagePreviewWidget_多阶段预览
 ```
 
 **技术栈**:
 -   **语言**: Python 3.x
 -   **GUI框架**: PyQt5
--   **核心图像处理**: OpenCV-Python, scikit-image
+-   **核心图像处理**: OpenCV-Python, scikit-image, SciPy
 -   **数值计算**: NumPy
 
 ## 数据与状态
 
 - **数据结构**: 软件的核心数据交换格式是一个字典，其键名由一个中央`constants.py`文件统一定义。这确保了从数据分析到UI展示的各个环节中，数据字段的一致性和稳定性。
-- **预览状态**: 预览的更新机制是**状态驱动**的。`Controller`在处理后，会发送一个包含当前状态（如 `LOADING`, `READY`, `EMPTY`）的信号。UI层的`MultiStagePreviewWidget`接收此信号后，会根据具体状态来决定如何展示，是将所有处理阶段的图像在标签页中一一呈现，还是显示"加载中"或"无结果"的提示。
+- **参数数据流**: 
+    1.  UI控件的用户输入触发一个信号。
+    2.  参数对话框根据`Analyzer`提供的`ui_hints`元数据，判断是否需要发射`realtime_preview_requested`信号。
+    3.  同时，`parameter_changed`信号被发射，告知`ControlPanel`。
+    4.  `ControlPanel` 调用 `controller.update_parameter(key, value)`。
+    5.  `Controller` 更新其内部维护的参数字典，然后检查该参数的ui_hints.realtime属性。
+    6.  如果参数需要实时预览，`Controller`会调用`run_preview()`方法触发预览更新。
+    7.  无论是否触发预览，`Controller`都会发射 `parameters_updated` 信号。
+    8.  所有相关的UI组件监听此信号并同步显示，完成一个封闭且无递归风险的循环。
+- **预览状态**: 预览的更新机制是**状态驱动**的。`Controller`在调用`Analyzer`处理后，会发送一个包含当前状态（如 `LOADING`, `READY`, `EMPTY`）和分析器提供的消息的信号。UI层的`MultiStagePreviewWidget`接收此信号后，会根据具体状态来决定如何展示。
 

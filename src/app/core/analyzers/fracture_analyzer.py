@@ -11,11 +11,16 @@ from skimage.morphology import skeletonize
 from .base_analyzer import BaseAnalyzer
 from .. import image_operations as ops
 from ...utils.constants import ResultKeys, StageKeys
+from ..unit_converter import UnitConverter
 
 class FractureAnalyzer(BaseAnalyzer):
     """
     裂缝分析器，负责执行所有与裂缝相关的计算和处理。
     """
+    def __init__(self):
+        super().__init__()
+        self.unit_converter = UnitConverter()
+
     def get_name(self) -> str:
         return "裂缝分析"
 
@@ -31,7 +36,8 @@ class FractureAnalyzer(BaseAnalyzer):
                 'c': 2,
                 'window_size': 51,
                 'k': 0.2,
-                'r': 128
+                'r': 128,
+                'ui_hints': {'realtime': True}
             },
             'morphology': {
                 'opening': {
@@ -46,11 +52,13 @@ class FractureAnalyzer(BaseAnalyzer):
                     'kernel_shape': 'rect',
                     'kernel_size': (3, 3),
                     'iterations': 1,
-                }
+                },
+                'ui_hints': {'realtime': True}
             },
             'filtering': {
                 'min_aspect_ratio': 5.0,
                 'min_length_pixels': 10.0,
+                'ui_hints': {'realtime': False}
             }
         }
     
@@ -95,19 +103,34 @@ class FractureAnalyzer(BaseAnalyzer):
         return final_result
 
     def _apply_threshold(self, image: np.ndarray, params: dict) -> np.ndarray:
-        """根据参数应用不同的阈值算法。"""
+        """根据参数应用不同的阈值算法（带弹性查找）。"""
         method = params.get('method', 'sauvola')
+        defaults = self.get_default_parameters()['threshold']
+
         if method == 'global':
-            return ops.apply_global_threshold(image, params.get('value', 128))
+            value = params.get('global_value', params.get('value', defaults['value']))
+            return ops.apply_global_threshold(image, value)
+
         elif method == 'adaptive_gaussian':
-            return ops.apply_adaptive_gaussian_threshold(image, params.get('block_size', 11), params.get('c', 2))
+            block_size = params.get('adaptive_block_size', params.get('block_size', defaults['block_size']))
+            c = params.get('adaptive_c_value', params.get('c', defaults['c']))
+            return ops.apply_adaptive_gaussian_threshold(image, block_size, c)
+
         elif method == 'otsu':
             binary, _ = ops.apply_otsu_threshold(image)
             return binary
+
         elif method == 'niblack':
-            return ops.apply_niblack_threshold(image, params.get('window_size', 25), params.get('k', 0.2))
+            window_size = params.get('niblack_window_size', params.get('window_size', defaults['window_size']))
+            k = params.get('niblack_k', params.get('k', defaults['k']))
+            return ops.apply_niblack_threshold(image, window_size, k)
+
         elif method == 'sauvola':
-            return ops.apply_sauvola_threshold(image, params.get('window_size', 25), params.get('k', 0.2), params.get('r', 128))
+            window_size = params.get('sauvola_window_size', params.get('window_size', defaults['window_size']))
+            k = params.get('sauvola_k', params.get('k', defaults['k']))
+            r = params.get('sauvola_r', params.get('r', defaults['r']))
+            return ops.apply_sauvola_threshold(image, window_size, k, r)
+            
         return image
 
     def _analyze_and_filter_fractures(self, binary_image: np.ndarray, params: dict) -> List[Dict]:
@@ -170,4 +193,49 @@ class FractureAnalyzer(BaseAnalyzer):
         }
 
         print(f"[DEBUG FractureAnalyzer] 生成的测量数据: {measurements}")
-        return measurements 
+        return measurements
+
+    def is_result_empty(self, results: Dict[str, Any]) -> bool:
+        """检查裂缝分析结果是否为空。"""
+        measurements = results.get(ResultKeys.MEASUREMENTS.value, {})
+        return measurements.get('count', 0) == 0
+
+    def get_empty_message(self) -> str:
+        """返回裂缝分析的空结果消息。"""
+        return "未检测到有效裂缝"
+
+    def post_process_measurements(self, results: Dict[str, Any], dpi: float) -> Dict[str, Any]:
+        """将裂缝测量的像素单位转换为物理单位（毫米）。"""
+        measurements = results.get(ResultKeys.MEASUREMENTS.value, {})
+        if not measurements or not dpi:
+            return results
+
+        converted_measurements = measurements.copy()
+        
+        if 'total_area_pixels' in measurements:
+            converted_measurements['total_area_mm2'] = self.unit_converter.convert_area(
+                measurements['total_area_pixels'], dpi
+            )
+        if 'total_length_pixels' in measurements:
+            converted_measurements['total_length_mm'] = self.unit_converter.convert_distance(
+                measurements['total_length_pixels'], dpi
+            )
+
+        if 'details' in measurements:
+            converted_details = []
+            for detail in measurements['details']:
+                new_detail = detail.copy()
+                if 'area_pixels' in new_detail:
+                    new_detail['area_mm2'] = self.unit_converter.convert_area(
+                        new_detail['area_pixels'], dpi
+                    )
+                if 'length_pixels' in new_detail:
+                    new_detail['length_mm'] = self.unit_converter.convert_distance(
+                        new_detail['length_pixels'], dpi
+                    )
+                converted_details.append(new_detail)
+            converted_measurements['details'] = converted_details
+            
+        final_results = results.copy()
+        final_results[ResultKeys.MEASUREMENTS.value] = converted_measurements
+        return final_results 

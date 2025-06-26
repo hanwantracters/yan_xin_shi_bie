@@ -15,7 +15,9 @@ graph TD
         MSPW[MultiStagePreviewWidget_多阶段预览]
         subgraph ParameterPanels [参数面板]
             FPP[FractureParamsPanel_裂缝参数面板]
+            PPP[PoreParamsPanel_孔洞参数面板]
             style FPP fill:#cde4ff
+            style PPP fill:#cde4ff
         end
     end
 
@@ -24,7 +26,9 @@ graph TD
         subgraph Analyzers_策略
             BA[BaseAnalyzer_分析器基类]
             FA[FractureAnalyzer_裂缝分析器]
+            PA[PoreAnalyzer_孔洞分析器]
             style FA fill:#cde4ff
+            style PA fill:#cde4ff
         end
         UC[UnitConverter_单位转换器]
         IO[ImageOperations_图像操作]
@@ -38,13 +42,17 @@ graph TD
     MW --> MSPW
     CP --> C
     CP --> FPP
+    CP --> PPP
     
     C --> BA
     C -- "Manages" --> FA
+    C -- "Manages" --> PA
     FA -- "Uses" --> IO
+    PA -- "Uses" --> IO
     C -- "Uses" --> UC
     C --> Const
     FA --> Const
+    PA --> Const
     MSPW -.-> Const
 ```
 
@@ -61,21 +69,59 @@ sequenceDiagram
     participant PreviewWidget as 多阶段预览
 
     User->>ParamPanel: 调整参数 (如移动滑块)
-    ParamPanel->>Controller: 调用 update_parameter()
+    ParamPanel->>Controller: 调用 update_parameter(key, value)
     Controller->>Controller: 更新内部参数
-    Controller->>Controller: 调用 run_preview()
-    Controller->>PreviewWidget: 发送 preview_state_changed(state='LOADING')
-    PreviewWidget->>PreviewWidget: 显示 "加载中..."
     
-    Controller->>Analyzer: 调用 run_analysis(image, params)
-    Analyzer->>Analyzer: 执行图像处理...
-    Analyzer-->>Controller: 返回结果字典
-    
-    alt 未检测到裂缝
-        Controller->>PreviewWidget: 发送 preview_state_changed(state='EMPTY')
-        PreviewWidget->>PreviewWidget: 显示 "未检测到有效裂缝"
-    else 检测到裂缝
-        Controller->>PreviewWidget: 发送 preview_state_changed(state='READY', payload=结果)
-        PreviewWidget->>PreviewWidget: 解析payload并显示所有阶段预览图
+    alt 参数需要实时预览 (ui_hints.realtime=true)
+        Controller->>Controller: 调用 run_preview()
+        Controller->>PreviewWidget: 发送 preview_state_changed(state='LOADING')
+        PreviewWidget->>PreviewWidget: 显示 "加载中..."
+        
+        Controller->>Analyzer: 调用 run_analysis(image, params)
+        Analyzer->>Analyzer: 执行图像处理...
+        Analyzer-->>Controller: 返回结果字典
+        
+        alt 未检测到有效结果
+            Controller->>PreviewWidget: 发送 preview_state_changed(state='EMPTY')
+            PreviewWidget->>PreviewWidget: 显示 "未检测到有效结果"
+        else 检测到有效结果
+            Controller->>PreviewWidget: 发送 preview_state_changed(state='READY', payload=结果)
+            PreviewWidget->>PreviewWidget: 解析payload并显示所有阶段预览图
+        end
+    else 参数不需要实时预览
+        Controller->>Controller: 仅更新参数，不触发预览
     end
+``` 
+
+## 3. 参数实时预览控制流程 (Parameter Real-time Preview Control Flow)
+
+此图展示了如何通过参数定义中的 ui_hints 属性来控制不同参数的实时预览行为。
+
+```mermaid
+graph TD
+    subgraph 参数定义
+        P1[参数1: ui_hints.realtime=true]
+        P2[参数2: ui_hints.realtime=false]
+    end
+    
+    subgraph 控制器
+        UP[update_parameter方法]
+        RP[run_preview方法]
+        FA[run_full_analysis方法]
+    end
+    
+    subgraph 用户界面
+        UI1[参数调整控件]
+        UI2[一键分析按钮]
+        PV[预览窗口]
+    end
+    
+    UI1 -->|参数变更| UP
+    UP -->|检查ui_hints| C{需要实时预览?}
+    C -->|是| RP
+    C -->|否| D[仅更新参数]
+    
+    UI2 -->|点击| FA
+    FA -->|总是触发| PV
+    RP -->|触发| PV
 ``` 

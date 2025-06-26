@@ -4,66 +4,125 @@
 
 ## 文件结构
 
--   **`controller.py`**: **业务逻辑层**。作为应用程序的中心协调器，负责管理和切换当前激活的分析策略。
--   **`image_operations.py`**: **数据处理层**。提供了一系列原子化、可重用的图像处理函数（如高斯模糊、阈值算法等）。
+-   **`controller.py`**: **业务逻辑层**。作为应用程序的中心协调器，负责管理分析策略和所有分析参数，并将具体业务逻辑**委托**给分析器。
+-   **`image_operations.py`**: **数据处理层**。提供了一系列原子化、可重用的通用图像处理函数（如高斯模糊、阈值算法等）。
 -   **`unit_converter.py`**: **工具**。提供像素单位与物理单位（毫米）之间的转换功能。
 -   **`constants.py`**: **通用工具**。定义了项目范围内使用的常量，如字典键名(`ResultKeys`)和预览状态(`PreviewState`)，以避免硬编码。
 -   **`analyzers/`**: **策略层**。
     -   `base_analyzer.py`: 定义了所有分析器必须遵守的抽象基类 `BaseAnalyzer` 接口。
-    -   `fracture_analyzer.py`: `BaseAnalyzer` 的一个具体实现，封装了所有与"裂缝分析"相关的处理流程和参数。
+    -   `fracture_analyzer.py`: `BaseAnalyzer` 的一个具体实现，封装了所有与"裂缝分析"相关的逻辑。
+    -   `pore_analyzer.py`: `BaseAnalyzer` 的一个具体实现，封装了所有与"孔洞分析"相关的逻辑。
 
 ## 架构设计：策略模式 (Analyzer)
 
-本项目的核心是基于策略模式的分析器 `(Analyzer)` 架构。
+本项目的核心是基于策略模式的分析器 `(Analyzer)` 架构，并且该接口经过了扩展，以实现更高的内聚和解耦。
 
 -   **`BaseAnalyzer` (策略接口)**: 定义了一个所有分析器都必须实现的通用接口，主要包括：
-    -   `get_id()`: 返回分析器的唯一标识符 (如 `'fracture'`)。
-    -   `get_name()`: 返回用于在UI上显示的名称 (如 `'裂缝分析'`)。
-    -   `get_default_parameters()`: 返回该分析器所需的默认参数结构。
-    -   `run_analysis()`: 执行该策略特有的完整分析流程，并返回一个包含可视化图像和测量数据的字典。
+    -   `get_id()` / `get_name()`: 返回分析器的唯一ID和显示名称。
+    -   `get_default_parameters()`: 返回该分析器所需的默认参数结构，其中可包含`ui_hints`元数据以驱动UI行为（如实时预览）。
+    -   `run_analysis()`: 执行该策略特有的完整分析流程。
+    -   **新增接口**:
+        -   `is_result_empty(results)`: 由分析器自行判断其分析结果是否为空。
+        -   `get_empty_message()`: 当结果为空时，返回定制化的提示信息。
+        -   `post_process_measurements(results, dpi)`: 封装所有与单位转换相关的后处理逻辑。
 
--   **具体分析器 (具体策略)**: 如 `FractureAnalyzer`，它继承自 `BaseAnalyzer` 并提供了 `run_analysis` 方法的具体实现。它从 `image_operations` 模块中调用所需的原子函数，按照特定顺序组合它们，以完成裂缝的识别和测量。
+-   **具体分析器 (具体策略)**: 如 `FractureAnalyzer` 和 `PoreAnalyzer`，它们继承自 `BaseAnalyzer` 并提供了所有接口的具体实现。特定于某个分析的工具函数（如孔洞圆度计算）应作为其私有方法，而不是放在通用的`image_operations.py`中。
 
-这种设计的优势在于**可扩展性**和**解耦**。未来若要添加"孔洞分析"功能，只需创建一个新的 `PoreAnalyzer` 类，实现 `BaseAnalyzer` 接口，并将其在 `Controller` 中注册即可，无需修改现有代码。
+这种设计的优势在于**可扩展性**和**责任分离**。`Controller` 完全不了解任何具体分析的实现细节，它只负责调用 `BaseAnalyzer` 的标准接口。
 
 ## Controller 设计
 
-`Controller` 的角色是**策略的管理者 (Context)**。它不关心具体分析算法的实现细节。其核心职责包括：
+`Controller` 的角色是**策略和参数的中心管理者**，以及UI和核心逻辑之间的**通用协调器**。
 
 -   **分析器注册与管理**: 在启动时，扫描并注册所有可用的 `Analyzer` 实例。
--   **状态管理**:
-    -   持有当前加载的图像 (`current_image`) 和DPI信息。
-    -   维护当前**激活的分析器** (`active_analyzer`)。
-    -   管理当前激活分析器所需的参数 (`analysis_params`)。
--   **流程驱动**:
-    -   响应UI请求，调用 `active_analyzer.run_analysis()` 方法，将图像和参数传递给它。
-    -   接收分析器返回的结果。
+-   **参数管理 (唯一事实来源)**:
+    -   维护当前激活分析器所需的所有参数 (`analysis_params`)。
+    -   提供统一的 `update_parameter` 方法作为参数的**唯一修改入口**。
+-   **流程驱动 (职责分离与委托)**:
+    -   `Controller` 的核心职责是响应UI请求，然后调用 `active_analyzer` 的相应方法，将所有业务决策**委托**出去。
+    -   例如，`run_preview` 方法现在只负责调用 `active_analyzer.run_analysis()`，然后使用 `active_analyzer.is_result_empty()` 来判断结果，而不是自己硬编码判断逻辑。
 -   **结果分发**:
-    -   **状态化预览**: 不再逐个发送预览图像，而是发送一个包含当前处理状态的信号 `preview_state_changed`。该信号的载荷是一个字典 `{'state': PreviewState, 'payload': ...}`，`payload`中包含了完整的分析结果。UI层根据此状态来更新自己。
-    -   **最终结果**: 在进行单位换算后，将最终的测量数据通过信号 (`analysis_complete`) 发送给UI层。
-    -   **统一键名**: 所有分析结果的字典键都使用 `constants.ResultKeys` 中定义的常量，确保了模块间交互的一致性。
+    -   **状态化预览**: 通过 `preview_state_changed` 信号分发预览结果，UI层根据此信号更新显示。
+    -   **最终结果**: 通过 `analysis_complete` 信号分发由`Analyzer`完成单位转换的最终测量数据。
 
 ## 图像处理流水线
 
-具体的图像处理流水线不再由 `Controller` 或单个 `ImageProcessor` 硬编码。**每个分析器内部都定义了自己的流水线**。
+具体的图像处理流水线不再由 `Controller` 硬编码。**每个分析器内部都定义了自己的流水线**。
 
-例如，在 `FractureAnalyzer` 的 `run_analysis` 方法中，其流水线大致如下：
-1.  图像预处理（灰度、模糊）。
-2.  阈值分割。
-3.  形态学处理。
-4.  轮廓分析与过滤（根据长宽比等裂缝特有属性）。
-5.  结果可视化与测量。
+例如，在 `PoreAnalyzer` 的 `run_analysis` 方法中，其流水线可能采用分水岭算法来处理粘连的孔洞，这与 `FractureAnalyzer` 的流水线完全不同。
+
+## 图像处理算法
+
+本项目实现了多种图像处理算法，特别是在阈值分割方面，提供了多种可选方法以适应不同的图像特征和裂缝类型：
+
+### 阈值分割方法
+
+1. **全局阈值 (Global Thresholding)**
+   - 简单直接的二值化方法，使用单一阈值将整个图像分为前景和背景
+   - 适用于光照均匀、对比度高的图像
+   - 参数：`threshold_value` - 像素值高于此阈值被视为前景(255)，低于则为背景(0)
+
+2. **Otsu阈值 (Otsu's Method)**
+   - 自动计算最优全局阈值的方法，通过最小化前景和背景类间方差
+   - 适用于双峰直方图图像（前景和背景有明显灰度差异）
+   - 无需手动设置阈值参数
+
+3. **自适应高斯阈值 (Adaptive Gaussian Thresholding)**
+   - 根据像素邻域计算局部阈值，能适应图像中不同区域的光照变化
+   - 参数：`block_size` - 计算阈值的邻域大小，`C` - 从均值中减去的常数
+
+4. **Niblack阈值 (Niblack's Method)**
+   - 局部自适应阈值方法，考虑局部区域的均值和标准差
+   - 公式：`threshold = mean + k * standard_deviation`
+   - 参数：`window_size` - 局部区域大小，`k` - 权重因子（通常为负值）
+   - 适用于光照不均匀的图像
+
+5. **Sauvola阈值 (Sauvola's Method)**
+   - Niblack方法的改进版，增加了动态范围参数，减少噪声影响
+   - 公式：`threshold = mean * (1 + k * ((standard_deviation / r) - 1))`
+   - 参数：`window_size` - 局部区域大小，`k` - 权重因子，`r` - 动态范围参数
+   - 默认方法，特别适用于非均匀背景和微小裂缝的识别
+
+### 形态学处理
+
+在阈值分割后，应用形态学操作以改善二值图像质量：
+
+1. **开运算 (Opening)**
+   - 先腐蚀后膨胀的组合操作
+   - 用途：移除小的噪点，平滑轮廓，断开细小连接
+   - 参数：`kernel_shape`、`kernel_size`、`iterations`、`min_area`
+
+2. **闭运算 (Closing)**
+   - 先膨胀后腐蚀的组合操作
+   - 用途：填充小孔洞，连接断开的轮廓
+   - 参数：`kernel_shape`、`kernel_size`、`iterations`
+
+### 裂缝特征提取
+
+1. **轮廓分析**
+   - 使用OpenCV的`findContours`函数提取二值图像中的轮廓
+   - 计算每个轮廓的面积、最小外接矩形、长宽比等特征
+
+2. **骨架化 (Skeletonization)**
+   - 使用scikit-image的`skeletonize`函数将裂缝轮廓简化为单像素宽的骨架
+   - 用于精确计算裂缝长度
+
+3. **几何特征过滤**
+   - 基于长宽比(`min_aspect_ratio`)过滤非裂缝对象
+   - 基于最小长度(`min_length_pixels`)过滤过小的裂缝
+
+这种多样化的算法选择使系统能够适应不同类型的岩石材料和裂缝特征，提高了识别的准确性和鲁棒性。
 
 ## 数据结构
 
 分析器返回的、并在`Controller`中流转的核心数据结构是一个字典，其键名由`utils/constants.py`中的枚举`ResultKeys`和`StageKeys`统一定义。一个典型的结果字典如下：
 ```python
 {
-    ResultKeys.VISUALIZATION: <可视化结果图像>,
-    ResultKeys.MEASUREMENTS: { ...测量数据... },
-    ResultKeys.PREVIEWS: {
-        StageKeys.GRAY: <灰度图>,
-        StageKeys.BINARY: <二值图>,
+    ResultKeys.VISUALIZATION.value: <可视化结果图像>,
+    ResultKeys.MEASUREMENTS.value: { ...测量数据... },
+    ResultKeys.PREVIEWS.value: {
+        StageKeys.GRAY.value: <灰度图>,
+        StageKeys.BINARY.value: <二值图>,
         ...
     }
 }

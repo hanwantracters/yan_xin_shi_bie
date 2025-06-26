@@ -22,6 +22,7 @@ from PyQt5.QtWidgets import (
 
 from ..core.controller import Controller
 from .parameter_panels.fracture_params_panel import FractureParamsPanel
+from .parameter_panels.pore_params_panel import PoreParamsPanel
 
 
 class ControlPanel(QWidget):
@@ -46,7 +47,8 @@ class ControlPanel(QWidget):
         
         # 分析器ID到其UI面板类的映射
         self.analyzer_panel_map = {
-            'fracture': FractureParamsPanel
+            'fracture': FractureParamsPanel,
+            'pore_watershed': PoreParamsPanel
         }
 
         self._init_ui()
@@ -158,6 +160,7 @@ class ControlPanel(QWidget):
             # 4. 执行关键连接：
             #   - 将面板的信号连接到控制器的槽 (UI -> Controller)
             panel_instance.parameter_changed.connect(self.controller.update_parameter)
+            panel_instance.realtime_preview_requested.connect(self.controller.request_realtime_preview)
             #   - 将控制器的信号连接到面板的槽 (Controller -> UI)
             #   - 这确保了从文件加载参数时，对话框能够同步更新
             self.controller.parameters_updated.connect(panel_instance.on_parameters_updated)

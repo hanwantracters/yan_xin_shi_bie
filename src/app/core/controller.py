@@ -16,6 +16,7 @@ from PIL import Image
 from .unit_converter import UnitConverter
 from .analyzers.base_analyzer import BaseAnalyzer
 from .analyzers.fracture_analyzer import FractureAnalyzer
+from .analyzers.pore_analyzer import PoreAnalyzer
 from ..utils.constants import PreviewState, ResultKeys, StageKeys
 
 class Controller(QObject):
@@ -49,6 +50,9 @@ class Controller(QObject):
         fracture_analyzer = FractureAnalyzer()
         self.analyzers[fracture_analyzer.get_id()] = fracture_analyzer
         
+        pore_analyzer = PoreAnalyzer()
+        self.analyzers[pore_analyzer.get_id()] = pore_analyzer
+
         # 默认激活第一个分析器
         if self.analyzers:
             first_analyzer_id = next(iter(self.analyzers))
@@ -103,6 +107,11 @@ class Controller(QObject):
         print(f"参数已更新: {param_path} = {value}")
         self.parameters_updated.emit(self.analysis_params)
 
+    def request_realtime_preview(self):
+        """响应UI的请求，执行一次预览。"""
+        print("[DEBUG Controller] Realtime preview requested by UI.")
+        self.run_preview()
+
     def load_image_from_file(self, file_path: str):
         """从文件加载图像。"""
         try:
@@ -123,6 +132,8 @@ class Controller(QObject):
             self.error_occurred.emit(f"加载图像时发生错误: {str(e)}")
             return False, f"加载图像时发生错误: {str(e)}"
     
+
+
     def run_preview(self):
         """使用当前激活的分析器运行一次预览并更新UI。"""
         if self.current_image is None or self.active_analyzer is None:
@@ -132,13 +143,12 @@ class Controller(QObject):
         try:
             results = self.active_analyzer.run_analysis(self.current_image, self.analysis_params)
             
-            measurements = results.get(ResultKeys.MEASUREMENTS.value, {})
-            if not measurements or measurements.get('count', 0) == 0:
+            if self.active_analyzer.is_result_empty(results):
                 state_to_emit = {
                     'state': PreviewState.EMPTY,
-                    'payload': '未检测到有效裂缝'
+                    'payload': self.active_analyzer.get_empty_message()
                 }
-                print(f"DEBUG Controller: Emitting EMPTY state. Payload: {state_to_emit}")
+                print(f"DEBUG Controller: Emitting EMPTY state. Payload: {state_to_emit['payload']}")
                 self.preview_state_changed.emit(state_to_emit)
             else:
                 state_to_emit = {
@@ -167,57 +177,16 @@ class Controller(QObject):
         try:
             results = self.active_analyzer.run_analysis(self.current_image, self.analysis_params)
             
-            # 如果有DPI信息，则进行单位转换
+            # 单位转换现在委托给分析器
             final_results = results
             if self.current_dpi and self.current_dpi[0]:
-                final_results = self._convert_measurements_to_mm(results, self.current_dpi[0])
+                final_results = self.active_analyzer.post_process_measurements(results, self.current_dpi[0])
 
             self.analysis_complete.emit(final_results)
             print("分析完成。")
         except Exception as e:
             self.error_occurred.emit(f"分析失败: {e}")
             print(f"分析失败: {e}")
-
-    def _convert_measurements_to_mm(self, results: Dict, dpi: float) -> Dict:
-        """使用UnitConverter将结果字典中的像素单位转换为物理单位。"""
-        
-        measurements = results.get(ResultKeys.MEASUREMENTS.value, {})
-        if not measurements:
-            return results
-
-        # 创建一个新的字典来存储转换后的结果，以免修改原始结果
-        converted_measurements = measurements.copy()
-        
-        # 转换总面积和总长度
-        if 'total_area_pixels' in measurements:
-            converted_measurements['total_area_mm2'] = self.unit_converter.convert_area(
-                measurements['total_area_pixels'], dpi
-            )
-        if 'total_length_pixels' in measurements:
-            converted_measurements['total_length_mm'] = self.unit_converter.convert_distance(
-                measurements['total_length_pixels'], dpi
-            )
-
-        # 转换每个裂缝的详细信息
-        if 'details' in measurements:
-            converted_details = []
-            for detail in measurements['details']:
-                new_detail = detail.copy()
-                if 'area_pixels' in new_detail:
-                    new_detail['area_mm2'] = self.unit_converter.convert_area(
-                        new_detail['area_pixels'], dpi
-                    )
-                if 'length_pixels' in new_detail:
-                    new_detail['length_mm'] = self.unit_converter.convert_distance(
-                        new_detail['length_pixels'], dpi
-                    )
-                converted_details.append(new_detail)
-            converted_measurements['details'] = converted_details
-            
-        # 将转换后的测量结果放回主结果字典
-        final_results = results.copy()
-        final_results[ResultKeys.MEASUREMENTS.value] = converted_measurements
-        return final_results
 
     def get_current_image(self):
         return self.current_image
