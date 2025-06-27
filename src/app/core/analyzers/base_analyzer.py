@@ -37,27 +37,32 @@ class BaseAnalyzer(ABC):
         pass
 
     @abstractmethod
-    def get_default_parameters(self) -> Dict[str, Any]:
-        """返回一个包含该分析模式所需全部默认参数的字典。
-        
-        Returns:
-            Dict[str, Any]: 包含默认参数的字典。
-        """
-        pass
-
-    @abstractmethod
-    def run_analysis(self, image: np.ndarray, params: Dict[str, Any]) -> Dict[str, Any]:
-        """执行完整的分析流程。
+    def run_analysis(self, image: np.ndarray, params: Dict[str, Any], dpi: float = 0.0) -> Dict[str, Any]:
+        """执行该分析器特有的完整分析流程。
         
         Args:
-            image (np.ndarray): 待分析的原始图像。
-            params (Dict[str, Any]): 用于分析的参数字典。
+            image (np.ndarray): 输入的原始图像 (BGR格式)。
+            params (Dict[str, Any]): 该分析器所需的参数字典。
+            dpi (float): 图像的DPI，用于单位换算。
 
         Returns:
-            Dict[str, Any]: 一个包含结果的字典，通常应包括
-                             可视化图像 ('visualization') 和测量数据 ('measurements')。
+            Dict[str, Any]: 一个包含结果的字典，其键名应使用 ResultKeys 定义。
         """
-        pass 
+        raise NotImplementedError("子类必须实现 'run_analysis' 方法。")
+
+    @abstractmethod
+    def run_staged_analysis(self, image: np.ndarray, params: Dict[str, Any], stage_key: str) -> Dict[str, Any]:
+        """执行到指定阶段的分析流程，用于实时预览。
+
+        Args:
+            image (np.ndarray): 输入的原始图像 (BGR格式)。
+            params (Dict[str, Any]): 该分析器所需的参数字典。
+            stage_key (str): 希望执行到的阶段的键名 (例如, 'binary', 'morph')。
+
+        Returns:
+            Dict[str, Any]: 一个仅包含预览结果的字典。
+        """
+        raise NotImplementedError("子类必须实现 'run_staged_analysis' 方法。")
 
     @abstractmethod
     def is_result_empty(self, results: Dict[str, Any]) -> bool:

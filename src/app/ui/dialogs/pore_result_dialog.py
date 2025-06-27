@@ -19,7 +19,8 @@ class PoreResultDialog(BaseResultDialog):
         self.setWindowTitle("孔洞分析结果")
 
     def _populate_tabs(self):
-        """添加孔洞分析专属的标签页。"""
+        """创建孔洞分析专用的标签页。"""
+        print(f"[DEBUG {self.__class__.__name__}] _populate_tabs called.")
         # 1. 创建最终结果标签页
         final_result_label = QLabel()
         final_result_label.setAlignment(Qt.AlignCenter)
@@ -31,4 +32,10 @@ class PoreResultDialog(BaseResultDialog):
         for title in tab_titles:
             placeholder_label = QLabel(f"{title}将在此处显示...")
             placeholder_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
-            self.tab_widget.addTab(placeholder_label, title) 
+            self.tab_widget.addTab(placeholder_label, title)
+
+    def _update_specific_tabs(self, results: dict):
+        """更新孔洞分析的专属标签页。"""
+        print(f"[DEBUG {self.__class__.__name__}] _update_specific_tabs called.")
+        # 目前没有专属数据标签页需要更新，但保留此方法以备将来扩展
+        pass 

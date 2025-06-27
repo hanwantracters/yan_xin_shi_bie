@@ -6,7 +6,7 @@
 
 import cv2
 import numpy as np
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, List
 from skimage.filters import threshold_niblack, threshold_sauvola
 
 DEFAULT_GAUSSIAN_KERNEL = (5, 5)
@@ -99,4 +99,45 @@ def apply_morphological_postprocessing(
         iterations = closing_params.get('iterations', 1)
         processed_image = cv2.morphologyEx(processed_image, cv2.MORPH_CLOSE, kernel, iterations=iterations)
 
-    return processed_image 
+    return processed_image
+
+def get_contour_endpoints(contour: np.ndarray) -> List[Tuple[int, int]]:
+    """计算轮廓的两个端点。"""
+    # 使用最小外接矩形来确定主轴方向
+    rect = cv2.minAreaRect(contour)
+    box = cv2.boxPoints(rect)
+    box = box.astype(int)
+
+    # 矩形的四个角点
+    p1, p2, p3, p4 = box
+
+    # 计算相邻边的长度平方
+    d12_sq = np.sum((p1 - p2)**2)
+    d23_sq = np.sum((p2 - p3)**2)
+
+    # 长边中点作为端点近似
+    if d12_sq > d23_sq:
+        # p1-p2 和 p3-p4 是长边
+        mid1 = tuple(((p1 + p2) / 2).astype(int))
+        mid2 = tuple(((p3 + p4) / 2).astype(int))
+    else:
+        # p2-p3 和 p4-p1 是长边
+        mid1 = tuple(((p2 + p3) / 2).astype(int))
+        mid2 = tuple(((p4 + p1) / 2).astype(int))
+    
+    # 找到轮廓上离这两个中点最近的点作为精确端点
+    distances_to_mid1 = np.linalg.norm(contour.squeeze() - mid1, axis=1)
+    endpoint1_idx = np.argmin(distances_to_mid1)
+    
+    distances_to_mid2 = np.linalg.norm(contour.squeeze() - mid2, axis=1)
+    endpoint2_idx = np.argmin(distances_to_mid2)
+
+    return [tuple(contour[endpoint1_idx][0]), tuple(contour[endpoint2_idx][0])]
+
+def merge_contours(contour1: np.ndarray, contour2: np.ndarray) -> np.ndarray:
+    """将两个轮廓合并成一个。"""
+    # 将两个轮廓的点集合并
+    combined_points = np.vstack((contour1, contour2))
+    # 计算合并后点集的凸包作为新的轮廓
+    merged_contour = cv2.convexHull(combined_points)
+    return merged_contour 

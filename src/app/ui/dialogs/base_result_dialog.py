@@ -76,7 +76,19 @@ class BaseResultDialog(QDialog):
         elif state == PreviewState.READY:
             self.stacked_widget.setCurrentWidget(self.tab_widget)
             self._update_all_tabs(payload)
-            
+
+            # 如果载荷不包含最终可视化结果，说明是分阶段预览，
+            # 强制将当前标签页设置为最后一个预览页。
+            if ResultKeys.VISUALIZATION.value not in payload:
+                # 假设'形态学处理'是最后一个通用预览标签
+                morph_tab_index = -1
+                for i in range(self.tab_widget.count()):
+                    if self.tab_widget.tabText(i) == "形态学处理":
+                        morph_tab_index = i
+                        break
+                if morph_tab_index != -1:
+                    self.tab_widget.setCurrentIndex(morph_tab_index)
+
         QApplication.restoreOverrideCursor()
 
     def _create_common_preview_tabs(self):

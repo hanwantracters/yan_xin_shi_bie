@@ -22,7 +22,7 @@ class PoreAnalyzer(BaseAnalyzer):
 
     def __init__(self):
         super().__init__()
-        self.unit_converter = UnitConverter()
+        # self.unit_converter = UnitConverter()
 
     def get_name(self) -> str:
         return "孔洞分析 (分水岭)"
@@ -30,38 +30,15 @@ class PoreAnalyzer(BaseAnalyzer):
     def get_id(self) -> str:
         return "pore_watershed"
 
-    def get_default_parameters(self) -> Dict[str, Any]:
-        return {
-            'threshold': {
-                'method': 'otsu',
-                'value': 128,
-                'block_size': 51,
-                'c': 2,
-                'window_size': 51,
-                'k': 0.2,
-                'r': 128,
-                'ui_hints': {'realtime': True}
-            },
-            'morphology': {
-                'opening_ksize': 3,
-                'sure_bg_ksize': 3,
-                'ui_hints': {'realtime': True}
-            },
-            'filtering': {
-                'min_solidity': 0.85,
-                'min_area_pixels': 20,
-                'ui_hints': {'realtime': False}
-            }
-        }
-
-    def run_analysis(self, image: np.ndarray, params: Dict[str, Any]) -> Dict[str, Any]:
+    def run_analysis(self, image: np.ndarray, params: Dict[str, Any], dpi: float = 0.0) -> Dict[str, Any]:
         """执行孔洞分析的完整流程。"""
+        print("[DEBUG PoreAnalyzer] --- run_analysis START ---")
         # 1. 预处理
         gray = ops.convert_to_grayscale(image)
         blurred = ops.apply_gaussian_blur(gray, kernel_size=(7, 7))
 
         # 2. 阈值分割
-        thresh = ops.apply_otsu_threshold(blurred)[0]
+        thresh = self._apply_threshold(blurred, params.get('threshold', {}))
 
         # 3. 形态学处理与分水岭准备
         markers, sure_fg, sure_bg, unknown = self._prepare_for_watershed(
@@ -80,7 +57,7 @@ class PoreAnalyzer(BaseAnalyzer):
         visualization = self._draw_analysis_results(image.copy(), pores)
         measurements = self._calculate_measurements(pores, image.shape[0] * image.shape[1])
 
-        return {
+        final_result = {
             ResultKeys.VISUALIZATION.value: visualization,
             ResultKeys.MEASUREMENTS.value: measurements,
             ResultKeys.PREVIEWS.value: {
@@ -88,15 +65,83 @@ class PoreAnalyzer(BaseAnalyzer):
                 StageKeys.BINARY.value: thresh,
             }
         }
+        print(f"[DEBUG PoreAnalyzer] Returning result with keys: {final_result.keys()} and preview keys: {final_result[ResultKeys.PREVIEWS.value].keys()}")
+        print("[DEBUG PoreAnalyzer] --- run_analysis END ---")
+        return final_result
+
+    def run_staged_analysis(self, image: np.ndarray, params: Dict[str, Any], stage_key: str) -> Dict[str, Any]:
+        """执行到指定阶段的孔洞分析，用于预览。"""
+        # 1. 预处理
+        gray = ops.convert_to_grayscale(image)
+        blurred = ops.apply_gaussian_blur(gray, kernel_size=(7, 7))
+
+        # 2. 阈值分割
+        binary = self._apply_threshold(blurred, params.get('threshold', {}))
+        
+        previews = {
+            StageKeys.GRAY.value: gray,
+            StageKeys.BINARY.value: binary
+        }
+
+        if stage_key == StageKeys.BINARY.value:
+            return { ResultKeys.PREVIEWS.value: previews }
+
+        # 3. 形态学处理 (用于预览)
+        morph_params = params.get('morphology', {})
+        ksize = morph_params.get('opening_ksize', 3)
+        iterations = morph_params.get('opening_iterations', 2)
+        kernel = np.ones((ksize, ksize), np.uint8)
+        opening = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=iterations)
+        
+        previews[StageKeys.MORPH.value] = opening
+
+        # 对于孔洞分析，目前预览只支持到形态学处理
+        return { ResultKeys.PREVIEWS.value: previews }
+        
+    def _apply_threshold(self, image: np.ndarray, params: dict) -> np.ndarray:
+        """根据参数应用不同的阈值算法（带弹性查找）。"""
+        method = params.get('method')
+
+        if method == 'global':
+            value = params.get('global_value', params.get('value'))
+            return ops.apply_global_threshold(image, value)
+
+        elif method == 'adaptive_gaussian':
+            block_size = params.get('adaptive_block_size', params.get('block_size'))
+            c = params.get('adaptive_c_value', params.get('c'))
+            return ops.apply_adaptive_gaussian_threshold(image, block_size, c)
+
+        elif method == 'otsu':
+            binary, _ = ops.apply_otsu_threshold(image)
+            return binary
+
+        elif method == 'niblack':
+            window_size = params.get('niblack_window_size', params.get('window_size'))
+            k = params.get('niblack_k', params.get('k'))
+            return ops.apply_niblack_threshold(image, window_size, k)
+
+        elif method == 'sauvola':
+            window_size = params.get('sauvola_window_size', params.get('window_size'))
+            k = params.get('sauvola_k', params.get('k'))
+            r = params.get('sauvola_r', params.get('r'))
+            return ops.apply_sauvola_threshold(image, window_size, k, r)
+            
+        # 如果方法未知或未提供，则返回原始图像以避免崩溃
+        print(f"警告: 未知的阈值方法 '{method}' 或参数不足。")
+        return image
         
     def _prepare_for_watershed(self, thresh: np.ndarray, params: dict) -> Tuple:
         """为分水岭算法准备标记。"""
         # 开运算去噪声
-        kernel = np.ones((params.get('opening_ksize', 3),) * 2, np.uint8)
-        opening = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=2)
+        ksize = params.get('opening_ksize', 3)
+        iterations = params.get('opening_iterations', 2)
+        kernel = np.ones((ksize, ksize), np.uint8)
+        opening = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=iterations)
 
         # 确定背景
-        sure_bg = cv2.dilate(opening, kernel, iterations=params.get('sure_bg_ksize', 3))
+        bg_ksize = params.get('sure_bg_ksize', 3)
+        bg_kernel = np.ones((bg_ksize, bg_ksize), np.uint8)
+        sure_bg = cv2.dilate(opening, bg_kernel, iterations=1) # 通常背景膨胀迭代1次就够
 
         # 距离变换确定前景
         dist_transform = cv2.distanceTransform(opening, cv2.DIST_L2, 5)
@@ -188,7 +233,7 @@ class PoreAnalyzer(BaseAnalyzer):
         converted_measurements = measurements.copy()
 
         if 'total_area_pixels' in measurements:
-            converted_measurements['total_area_mm2'] = self.unit_converter.convert_area(
+            converted_measurements['total_area_mm2'] = UnitConverter.convert_area(
                 measurements['total_area_pixels'], dpi
             )
 
@@ -197,7 +242,7 @@ class PoreAnalyzer(BaseAnalyzer):
             for detail in measurements['details']:
                 new_detail = detail.copy()
                 if 'area_pixels' in new_detail:
-                    new_detail['area_mm2'] = self.unit_converter.convert_area(
+                    new_detail['area_mm2'] = UnitConverter.convert_area(
                         new_detail['area_pixels'], dpi
                     )
                 converted_details.append(new_detail)

@@ -33,12 +33,12 @@ class ControlPanel(QWidget):
     """
 
     # 定义信号
-    loadImageClicked = pyqtSignal(str)
-    startAnalysisClicked = pyqtSignal()
-    measureToolClicked = pyqtSignal()
+    image_load_requested = pyqtSignal()
+    analysis_requested = pyqtSignal()
+    measure_tool_clicked = pyqtSignal()
     import_parameters_requested = pyqtSignal()
     export_parameters_requested = pyqtSignal()
-    analyzer_changed = pyqtSignal()
+    analyzer_changed = pyqtSignal(str)
 
     def __init__(self, controller: Controller, parent: Optional[QWidget] = None) -> None:
         """初始化控制面板。"""
@@ -101,10 +101,9 @@ class ControlPanel(QWidget):
     def _connect_signals(self):
         """连接所有UI控件的信号。"""
         # 主功能按钮
-        self.load_image_btn.clicked.connect(self._on_load_image_clicked)
-        # 将 "开始分析" 按钮连接到新的控制器方法
-        self.start_analysis_btn.clicked.connect(self.controller.run_full_analysis)
-        self.measure_btn.clicked.connect(self.measureToolClicked)
+        self.load_image_btn.clicked.connect(self.image_load_requested)
+        self.start_analysis_btn.clicked.connect(self.analysis_requested)
+        self.measure_btn.clicked.connect(self.measure_tool_clicked)
         
         # 参数管理
         self.import_btn.clicked.connect(self.import_parameters_requested)
@@ -169,17 +168,14 @@ class ControlPanel(QWidget):
             self.params_stack.addWidget(panel_instance)
             self.params_stack.setCurrentWidget(panel_instance)
             print(f"UI已切换到分析模式: {self.mode_selector_combo.currentText()}")
-            self.analyzer_changed.emit()
+            self.analyzer_changed.emit(analyzer_id)
         else:
             print(f"警告: 未找到分析器ID '{analyzer_id}' 对应的参数面板类。")
         
     def _on_load_image_clicked(self) -> None:
         """打开文件对话框让用户选择图像，并发射信号。"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "选择一张岩心图像", "", "Image Files (*.png *.jpg *.bmp *.jpeg)"
-        )
-        if file_path:
-            self.loadImageClicked.emit(file_path)
+        # 这个方法现在应该由MainWindow处理，这里只发射信号
+        self.image_load_requested.emit()
 
     def _on_analyzers_registered(self, analyzers: List[Tuple[str, str]]):
         """当控制器注册了分析器后，仅更新模式选择下拉框。"""

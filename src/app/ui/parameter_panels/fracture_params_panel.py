@@ -20,7 +20,7 @@ class FractureParamsPanel(QWidget):
     为裂缝分析提供参数调整入口的UI面板。
     """
     parameter_changed = Signal(str, object)
-    realtime_preview_requested = Signal()
+    realtime_preview_requested = Signal(str)
 
     def __init__(self, controller: Controller, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -99,7 +99,6 @@ class FractureParamsPanel(QWidget):
         if self.filtering_dialog is None:
             self.filtering_dialog = FilteringSettingsDialog(self.controller, self)
             self.filtering_dialog.parameter_changed.connect(self.parameter_changed)
-            self.filtering_dialog.realtime_preview_requested.connect(self.realtime_preview_requested)
             self.controller.parameters_updated.connect(self.filtering_dialog.update_controls)
             
         self.filtering_dialog.update_controls(self.controller.get_current_parameters())

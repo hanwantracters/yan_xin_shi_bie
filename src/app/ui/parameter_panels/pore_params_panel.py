@@ -8,22 +8,22 @@ from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton, QGroupBox
 
 from ...core.controller import Controller
 from ..dialogs.pore_filtering_dialog import PoreFilteringSettingsDialog
+from ..dialogs.pore_morphology_dialog import PoreMorphologyDialog
 # We can reuse threshold and morphology dialogs if their logic is generic enough
 from ..threshold_settings_dialog import ThresholdSettingsDialog
-from ..morphology_settings_dialog import MorphologySettingsDialog
 
 
 class PoreParamsPanel(QWidget):
     """为孔洞分析提供参数调整入口的UI面板。"""
     parameter_changed = Signal(str, object)
-    realtime_preview_requested = Signal()
+    realtime_preview_requested = Signal(str)
 
     def __init__(self, controller: Controller, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.controller = controller
 
         self.threshold_dialog: Optional[ThresholdSettingsDialog] = None
-        self.morphology_dialog: Optional[MorphologySettingsDialog] = None
+        self.morphology_dialog: Optional[PoreMorphologyDialog] = None
         self.filtering_dialog: Optional[PoreFilteringSettingsDialog] = None
 
         self._init_ui()
@@ -73,7 +73,7 @@ class PoreParamsPanel(QWidget):
 
     def _open_morphology_dialog(self):
         if self.morphology_dialog is None:
-            self.morphology_dialog = MorphologySettingsDialog(self.controller, self)
+            self.morphology_dialog = PoreMorphologyDialog(self.controller, self)
             self.morphology_dialog.parameter_changed.connect(self.parameter_changed)
             self.morphology_dialog.realtime_preview_requested.connect(self.realtime_preview_requested)
         self.morphology_dialog.update_controls(self.controller.get_current_parameters())
@@ -83,6 +83,5 @@ class PoreParamsPanel(QWidget):
         if self.filtering_dialog is None:
             self.filtering_dialog = PoreFilteringSettingsDialog(self.controller, self)
             self.filtering_dialog.parameter_changed.connect(self.parameter_changed)
-            self.filtering_dialog.realtime_preview_requested.connect(self.realtime_preview_requested)
         self.filtering_dialog.update_controls(self.controller.get_current_parameters())
         self.filtering_dialog.show() 

@@ -7,7 +7,13 @@
 from enum import Enum, auto
 
 class ResultKeys(Enum):
-    """分析结果字典的键名。"""
+    """分析结果字典的键名。
+    
+    中文翻译:
+    - VISUALIZATION: 可视化结果
+    - MEASUREMENTS: 测量数据
+    - PREVIEWS: 预览图像
+    """
     VISUALIZATION = 'visualization'
     MEASUREMENTS = 'measurements'
     PREVIEWS = 'previews'

@@ -5,7 +5,7 @@
 
 from typing import Optional
 
-from PyQt5.QtCore import Qt, pyqtSignal as Signal
+from PyQt5.QtCore import Qt, pyqtSignal as Signal, QTimer
 from PyQt5.QtWidgets import (
     QDialog,
     QWidget,
@@ -16,16 +16,18 @@ from PyQt5.QtWidgets import (
     QStackedWidget,
     QSlider,
     QLabel,
-    QDoubleSpinBox
+    QDoubleSpinBox,
+    QSpinBox
 )
 
 from src.app.core.controller import Controller
+from src.app.utils.constants import StageKeys
 
 class ThresholdSettingsDialog(QDialog):
     """用于设置阈值参数的对话框。"""
     
     parameter_changed = Signal(str, object)
-    realtime_preview_requested = Signal()
+    realtime_preview_requested = Signal(str)
 
     def __init__(self, controller: Controller, parent: Optional[QWidget] = None):
         """初始化对话框。
@@ -42,6 +44,7 @@ class ThresholdSettingsDialog(QDialog):
         
         self._init_ui()
         self._connect_signals()
+        self._init_preview_timer()
 
     def _init_ui(self):
         """初始化UI组件和布局。"""
@@ -81,67 +84,137 @@ class ThresholdSettingsDialog(QDialog):
     def _create_global_threshold_widget(self) -> QWidget:
         widget = QWidget(); layout = QFormLayout(widget)
         slider = QSlider(Qt.Horizontal, objectName="threshold.global_value"); slider.setRange(0, 255)
-        label = QLabel()
-        slider.valueChanged.connect(label.setNum)
-        layout.addRow("阈值:", slider); layout.addRow("当前值:", label)
+        spinbox = QSpinBox(objectName="threshold.global_value_spinbox"); spinbox.setRange(0, 255)
+        
+        # 建立双向连接
+        slider.valueChanged.connect(spinbox.setValue)
+        spinbox.valueChanged.connect(slider.setValue)
+        
+        layout.addRow("阈值:", slider)
+        layout.addRow("当前值:", spinbox)
         return widget
 
     def _create_adaptive_gaussian_widget(self) -> QWidget:
         widget = QWidget(); layout = QFormLayout(widget)
-        bs_slider = QSlider(Qt.Horizontal, objectName="threshold.adaptive_block_size"); bs_slider.setRange(3, 51); bs_slider.setSingleStep(2)
-        bs_label = QLabel()
-        bs_slider.valueChanged.connect(bs_label.setNum)
-        layout.addRow("Block Size:", bs_slider); layout.addRow("当前值:", bs_label)
         
-        c_slider = QSlider(Qt.Horizontal, objectName="threshold.adaptive_c_value"); c_slider.setRange(-10, 10)
-        c_label = QLabel()
-        c_slider.valueChanged.connect(c_label.setNum)
-        layout.addRow("C Value:", c_slider); layout.addRow("当前值:", c_label)
+        # Block Size 控件组
+        bs_slider = QSlider(Qt.Horizontal, objectName="threshold.adaptive_block_size")
+        bs_slider.setRange(3, 51); bs_slider.setSingleStep(2)
+        bs_spinbox = QSpinBox(objectName="threshold.adaptive_block_size_spinbox")
+        bs_spinbox.setRange(3, 51); bs_spinbox.setSingleStep(2)
+        
+        # 确保Block Size为奇数
+        def ensure_odd_bs(value):
+            if value % 2 == 0:
+                bs_spinbox.blockSignals(True)
+                bs_spinbox.setValue(value + 1)
+                bs_spinbox.blockSignals(False)
+                return value + 1
+            return value
+            
+        # 双向连接带奇数校验
+        bs_slider.valueChanged.connect(lambda v: bs_spinbox.setValue(ensure_odd_bs(v)))
+        bs_spinbox.valueChanged.connect(lambda v: bs_slider.setValue(ensure_odd_bs(v)))
+        
+        layout.addRow("Block Size:", bs_slider)
+        layout.addRow("当前值:", bs_spinbox)
+        
+        # C Value 控件组
+        c_slider = QSlider(Qt.Horizontal, objectName="threshold.adaptive_c_value")
+        c_slider.setRange(-10, 10)
+        c_spinbox = QSpinBox(objectName="threshold.adaptive_c_value_spinbox")
+        c_spinbox.setRange(-10, 10)
+        
+        # 双向连接
+        c_slider.valueChanged.connect(c_spinbox.setValue)
+        c_spinbox.valueChanged.connect(c_slider.setValue)
+        
+        layout.addRow("C Value:", c_slider)
+        layout.addRow("当前值:", c_spinbox)
+        
         return widget
         
     def _create_niblack_sauvola_widget(self, is_sauvola: bool) -> QWidget:
         widget = QWidget(); layout = QFormLayout(widget)
         
+        # Window Size 控件组
         ws_slider = QSlider(Qt.Horizontal, objectName="threshold.window_size")
         ws_slider.setRange(3, 101); ws_slider.setSingleStep(2)
-        ws_label = QLabel()
-        ws_slider.valueChanged.connect(ws_label.setNum)
-        layout.addRow("Window Size:", ws_slider); layout.addRow("当前值:", ws_label)
+        ws_spinbox = QSpinBox(objectName="threshold.window_size_spinbox")
+        ws_spinbox.setRange(3, 101); ws_spinbox.setSingleStep(2)
+        
+        # 确保Window Size为奇数
+        def ensure_odd_ws(value):
+            if value % 2 == 0:
+                ws_spinbox.blockSignals(True)
+                ws_spinbox.setValue(value + 1)
+                ws_spinbox.blockSignals(False)
+                return value + 1
+            return value
+            
+        # 双向连接带奇数校验
+        ws_slider.valueChanged.connect(lambda v: ws_spinbox.setValue(ensure_odd_ws(v)))
+        ws_spinbox.valueChanged.connect(lambda v: ws_slider.setValue(ensure_odd_ws(v)))
+        
+        layout.addRow("Window Size:", ws_slider)
+        layout.addRow("当前值:", ws_spinbox)
 
+        # K Value 控件组 (保持使用QDoubleSpinBox，因为需要小数)
         k_spinbox = QDoubleSpinBox(objectName="threshold.k")
         k_spinbox.setRange(-2.0, 2.0); k_spinbox.setSingleStep(0.05)
         layout.addRow("K Value:", k_spinbox)
         
+        # Sauvola特有的R Value控件组
         if is_sauvola:
-            r_slider = QSlider(Qt.Horizontal, objectName="threshold.r"); r_slider.setRange(0, 255)
-            r_label = QLabel()
-            r_slider.valueChanged.connect(r_label.setNum)
-            layout.addRow("R Value:", r_slider); layout.addRow("当前值:", r_label)
+            r_slider = QSlider(Qt.Horizontal, objectName="threshold.r")
+            r_slider.setRange(0, 255)
+            r_spinbox = QSpinBox(objectName="threshold.r_spinbox")
+            r_spinbox.setRange(0, 255)
+            
+            # 双向连接
+            r_slider.valueChanged.connect(r_spinbox.setValue)
+            r_spinbox.valueChanged.connect(r_slider.setValue)
+            
+            layout.addRow("R Value:", r_slider)
+            layout.addRow("当前值:", r_spinbox)
             
         return widget
+
+    def _init_preview_timer(self):
+        """初始化用于延迟实时预览的计时器。"""
+        self.preview_timer = QTimer(self)
+        self.preview_timer.setSingleShot(True)
+        # The timer now triggers a method that emits the correct stage key
+        self.preview_timer.timeout.connect(self._request_binary_preview)
 
     def _connect_signals(self):
         self.threshold_method_combo.currentIndexChanged.connect(self.threshold_params_stack.setCurrentIndex)
         
-        all_param_widgets = self.findChildren((QComboBox, QSlider, QDoubleSpinBox))
+        all_param_widgets = self.findChildren((QComboBox, QSlider, QDoubleSpinBox, QSpinBox))
         for widget in all_param_widgets:
             if isinstance(widget, QComboBox):
                 widget.currentIndexChanged.connect(self._on_parameter_changed)
-            elif isinstance(widget, QSlider):
-                widget.sliderReleased.connect(self._on_parameter_changed)
-            elif isinstance(widget, QDoubleSpinBox):
+            elif isinstance(widget, (QSlider, QDoubleSpinBox, QSpinBox)):
+                # 对于QSpinBox，我们只监听valueChanged信号
+                # 滑块和QSpinBox之间的双向连接在各个创建方法中已经建立
+                if isinstance(widget, QSpinBox) and "_spinbox" in widget.objectName():
+                    continue  # 跳过spinbox对象，避免重复触发_on_parameter_changed
                 widget.valueChanged.connect(self._on_parameter_changed)
 
     def _on_parameter_changed(self, value=None):
         sender = self.sender()
         if not (sender and sender.objectName()): return
+        
+        # 跳过所有辅助性SpinBox的信号处理，避免双重触发
+        if isinstance(sender, QSpinBox) and "_spinbox" in sender.objectName():
+            return
 
         param_path = sender.objectName()
         
         # [修复] 重新实现清晰的逻辑来获取值
         if isinstance(sender, QComboBox):
             value = self.threshold_method_map.get(sender.currentIndex())
-        elif isinstance(sender, (QSlider, QDoubleSpinBox)):
+        elif isinstance(sender, (QSlider, QDoubleSpinBox, QSpinBox)):
             # value is passed directly by the signal
             pass
         else:
@@ -161,14 +234,19 @@ class ThresholdSettingsDialog(QDialog):
 
             # 检查是否需要触发实时预览
             current_params = self.controller.get_current_parameters()
-            print(f"[DEBUG Dialog] All current params from controller: {current_params}")
             param_group = param_path.split('.')[0] # e.g., 'threshold'
             
             hints = current_params.get(param_group, {}).get('ui_hints', {})
-            print(f"[DEBUG Dialog] Retrieved hints for group '{param_group}': {hints}")
+            print(f"[DEBUG Dialog] Checking ui_hints for realtime preview: {hints}")
             if hints.get('realtime', False):
-                print(f"[DEBUG Dialog] Realtime hint is True. Emitting request.")
-                self.realtime_preview_requested.emit()
+                print(f"[DEBUG Dialog] Realtime hint is True. Starting preview timer.")
+                # 先停止计时器，确保多次快速变更只触发一次预览
+                self.preview_timer.stop()
+                self.preview_timer.start(500)
+
+    def _request_binary_preview(self):
+        """发射一个请求二值化阶段预览的信号。"""
+        self.realtime_preview_requested.emit(StageKeys.BINARY.value)
 
     def update_controls(self, params: dict):
         print("DEBUG Dialog: update_controls CALLED.")
@@ -177,7 +255,7 @@ class ThresholdSettingsDialog(QDialog):
             print("DEBUG Dialog: update_controls exiting, no threshold params found.")
             return
         
-        all_param_widgets = self.findChildren((QComboBox, QSlider, QDoubleSpinBox))
+        all_param_widgets = self.findChildren((QComboBox, QSlider, QDoubleSpinBox, QSpinBox))
         for widget in all_param_widgets: widget.blockSignals(True)
 
         try:
@@ -185,22 +263,27 @@ class ThresholdSettingsDialog(QDialog):
             rev_map = {v: k for k, v in self.threshold_method_map.items()}
             self.threshold_method_combo.setCurrentIndex(rev_map.get(method, 0))
             
-            # Set values for all widgets regardless of visibility
+            # 设置滑块值
             self.findChild(QSlider, "threshold.global_value").setValue(p.get('value', 127))
             self.findChild(QSlider, "threshold.adaptive_block_size").setValue(p.get('block_size', 11))
             self.findChild(QSlider, "threshold.adaptive_c_value").setValue(p.get('c', 2))
             self.findChild(QSlider, "threshold.window_size").setValue(p.get('window_size', 25))
             self.findChild(QDoubleSpinBox, "threshold.k").setValue(p.get('k', -0.2))
             self.findChild(QSlider, "threshold.r").setValue(p.get('r', 128))
-        finally:
-            for widget in all_param_widgets: widget.blockSignals(False)
             
-            # [修复] 移除以下手动发射信号的代码。
-            # 这些代码是造成无限递归和程序崩溃的根源。
-            # 它们在update_controls的末尾重新触发了连接到_on_parameter_changed的信号，
-            # 导致 "update -> emit -> update" 的死循环。
-            # print("DEBUG Dialog: update_controls is now manually emitting signals to update UI labels.")
-            # self.threshold_method_combo.currentIndexChanged.emit(self.threshold_method_combo.currentIndex())
-            # for slider in self.findChildren(QSlider):
-            #     slider.valueChanged.emit(slider.value())
-            # print("DEBUG Dialog: update_controls FINISHED.") 
+            # 设置对应的SpinBox值 (需要确保SpinBox存在)
+            spinboxes = [
+                ("threshold.global_value_spinbox", p.get('value', 127)),
+                ("threshold.adaptive_block_size_spinbox", p.get('block_size', 11)),
+                ("threshold.adaptive_c_value_spinbox", p.get('c', 2)),
+                ("threshold.window_size_spinbox", p.get('window_size', 25)),
+                ("threshold.r_spinbox", p.get('r', 128)),
+            ]
+            
+            for name, value in spinboxes:
+                spinbox = self.findChild(QSpinBox, name)
+                if spinbox:
+                    spinbox.setValue(value)
+            
+        finally:
+            for widget in all_param_widgets: widget.blockSignals(False) 

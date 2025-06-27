@@ -7,6 +7,7 @@
 
 import json
 from typing import Dict, Any, List, Optional, Tuple
+import copy
 
 import numpy as np
 from PyQt5.QtCore import QObject, pyqtSignal
@@ -31,18 +32,32 @@ class Controller(QObject):
     def __init__(self):
         """初始化控制器。"""
         super().__init__()
-        self.unit_converter = UnitConverter()
+        # self.unit_converter = UnitConverter()
         
         # 状态变量
         self.current_image = None
         self.current_dpi = None
         self.current_image_path = None
         self.analysis_params: Dict[str, Any] = {}
+        self.default_params: Dict[str, Any] = {}
 
         # 分析器管理
         self.analyzers: Dict[str, BaseAnalyzer] = {}
         self.active_analyzer: Optional[BaseAnalyzer] = None
+        
+        self._load_all_default_params()
         self._register_analyzers()
+
+    def _load_all_default_params(self):
+        """从配置文件加载所有分析器的默认参数。"""
+        try:
+            # 假设 config 目录与 run.py 在同一级
+            with open('config/default_params.json', 'r', encoding='utf-8') as f:
+                self.default_params = json.load(f)
+            print("成功加载所有默认参数。")
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            self.error_occurred.emit(f"加载默认参数文件失败: {e}")
+            self.default_params = {} # 确保在失败时是个空字典
 
     def _register_analyzers(self):
         """扫描并注册所有可用的分析器。"""
@@ -66,7 +81,10 @@ class Controller(QObject):
         """设置当前激活的分析器，并加载其默认参数。"""
         if analyzer_id in self.analyzers:
             self.active_analyzer = self.analyzers[analyzer_id]
-            self.analysis_params = self.active_analyzer.get_default_parameters()
+            # 从集中加载的字典中获取默认参数
+            default_params = self.default_params.get(analyzer_id, {})
+            # 深拷贝以确保每个分析实例有独立的参数副本
+            self.analysis_params = copy.deepcopy(default_params)
             self.parameters_updated.emit(self.analysis_params)
             print(f"激活分析器: {self.active_analyzer.get_name()}")
         else:
@@ -108,11 +126,10 @@ class Controller(QObject):
         print(f"参数已更新: {param_path} = {value}")
         self.parameters_updated.emit(self.analysis_params)
 
-    def request_realtime_preview(self):
+    def request_realtime_preview(self, stage_key: Optional[str] = None):
         """响应UI的请求，执行一次预览。"""
-        print("[DEBUG Controller] Realtime preview requested by UI, starting run_preview.")
-        print("[DEBUG Controller] Realtime preview requested by UI.")
-        self.run_preview()
+        print(f"[DEBUG Controller] request_realtime_preview called with stage_key: {stage_key}")
+        self.run_preview(stage_key=stage_key)
 
     def load_image_from_file(self, file_path: str):
         """从文件加载图像。"""
@@ -136,28 +153,36 @@ class Controller(QObject):
     
 
 
-    def run_preview(self):
+    def run_preview(self, stage_key: Optional[str] = None):
         """使用当前激活的分析器运行一次预览并更新UI。"""
         if self.current_image is None or self.active_analyzer is None:
             return
 
-        self.preview_state_changed.emit({'state': PreviewState.LOADING})
+        self.preview_state_changed.emit({'state': PreviewState.LOADING, 'payload': '正在生成预览...'})
         try:
-            results = self.active_analyzer.run_analysis(self.current_image, self.analysis_params)
             
-            if self.active_analyzer.is_result_empty(results):
+            dpi = self.current_dpi[0] if self.current_dpi and self.current_dpi[0] else 0.0
+
+            if stage_key:
+                print(f"[DEBUG Controller] Running STAGED analysis for stage: {stage_key}")
+                results = self.active_analyzer.run_staged_analysis(self.current_image, self.analysis_params, stage_key)
+                is_empty = not results.get(ResultKeys.PREVIEWS.value)
+            else:
+                print("[DEBUG Controller] Running FULL analysis for preview.")
+                results = self.active_analyzer.run_analysis(self.current_image, self.analysis_params, dpi)
+                is_empty = self.active_analyzer.is_result_empty(results)
+
+            if is_empty:
                 state_to_emit = {
                     'state': PreviewState.EMPTY,
                     'payload': self.active_analyzer.get_empty_message()
                 }
-                print(f"DEBUG Controller: Emitting EMPTY state. Payload: {state_to_emit['payload']}")
                 self.preview_state_changed.emit(state_to_emit)
             else:
                 state_to_emit = {
                     'state': PreviewState.READY,
                     'payload': results
                 }
-                print(f"DEBUG Controller: Emitting READY state with payload keys: {results.keys()}")
                 self.preview_state_changed.emit(state_to_emit)
 
         except Exception as e:
@@ -165,7 +190,6 @@ class Controller(QObject):
                 'state': PreviewState.ERROR,
                 'payload': f"分析时发生错误: {e}"
             }
-            print(f"DEBUG Controller: Emitting ERROR state. Payload: {state_to_emit}")
             self.preview_state_changed.emit(state_to_emit)
             print(f"预览更新失败: {e}")
 
@@ -177,7 +201,8 @@ class Controller(QObject):
             return
             
         try:
-            results = self.active_analyzer.run_analysis(self.current_image, self.analysis_params)
+            dpi = self.current_dpi[0] if self.current_dpi and self.current_dpi[0] else 0.0
+            results = self.active_analyzer.run_analysis(self.current_image, self.analysis_params, dpi)
             
             # 单位转换现在委托给分析器
             final_results = results

@@ -16,7 +16,6 @@ class PoreFilteringSettingsDialog(QDialog):
     """用于设置孔洞过滤参数的对话框。"""
     
     parameter_changed = Signal(str, object)
-    realtime_preview_requested = Signal()
 
     def __init__(self, controller: Controller, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -66,13 +65,6 @@ class PoreFilteringSettingsDialog(QDialog):
             value = sender.value()
         
         self.parameter_changed.emit(param_path, value)
-
-        current_params = self.controller.get_current_parameters()
-        param_group = param_path.split('.')[0] # 'filtering'
-        
-        hints = current_params.get(param_group, {}).get('ui_hints', {})
-        if hints.get('realtime', False):
-            self.realtime_preview_requested.emit()
 
     def update_controls(self, params: dict):
         """用给定的参数更新UI控件。"""

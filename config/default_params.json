@@ -1,31 +1,83 @@
 {
-    "version": "1.0",
-    "analysis_parameters": {
+    "fracture": 
+    {
         "threshold": {
             "method": "sauvola",
-            "global_value": 127,
-            "adaptive_block_size": 3,
-            "adaptive_c_value": 2,
-            "niblack_window_size": 3,
-            "niblack_k": -0.2,
-            "sauvola_window_size": 73,
-            "sauvola_k": 0.2,
-            "sauvola_r": 255
+            "value": 128,
+            "block_size": 51,
+            "c": 2,
+            "window_size": 51,
+            "k": 0.2,
+            "r": 128,
+            "ui_hints": {
+                "realtime": true
+            }
         },
         "morphology": {
-            "open_kernel_size": 3,
-            "open_iterations": 1,
-            "close_kernel_size": 20,
-            "close_iterations": 2
+            "opening": {
+                "enabled": true,
+                "kernel_shape": "rect",
+                "kernel_size": [
+                    3,
+                    3
+                ],
+                "iterations": 2,
+                "ui_hints": {
+                    "realtime": true
+                }
+            },
+            "closing": {
+                "enabled": true,
+                "kernel_shape": "rect",
+                "kernel_size": [
+                    3,
+                    3
+                ],
+                "iterations": 1,
+                "ui_hints": {
+                    "realtime": true
+                }
+            },
+            "open_kernel_size": 1,
+            "open_iterations": 2,
+            "close_kernel_size": 10,
+            "close_iterations": 1,
+            "ui_hints": {
+                "realtime": true
+            }
         },
         "filtering": {
-            "min_length_mm": 100.0,
-            "min_aspect_ratio": 3.0
+            "min_aspect_ratio": 5.0,
+            "min_length_mm": 1000.0
         },
         "merging": {
             "enabled": true,
             "merge_distance_mm": 20.0,
             "max_angle_diff": 15.0
+        }
+    },
+    "pore_watershed": {
+        "threshold": {
+            "method": "sauvola",
+            "value": 128,
+            "block_size": 51,
+            "c": 2,
+            "window_size": 51,
+            "k": 0.2,
+            "r": 128,
+            "ui_hints": {
+                "realtime": true
+            }
+        },
+        "morphology": {
+            "opening_ksize": 3,
+            "opening_iterations": 2,
+            "sure_bg_ksize": 3,
+            "ui_hints": { "realtime": true }
+        },
+        "filtering": {
+            "min_solidity": 0.85,
+            "min_area_pixels": 20
         }
     }
 }

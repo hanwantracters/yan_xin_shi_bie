@@ -148,37 +148,35 @@ class MainWindow(QMainWindow):
         
     def _connect_signals(self):
         """连接组件信号。"""
-        # 连接控制面板信号
-        self.control_panel.loadImageClicked.connect(self._on_load_image)
-        self.control_panel.startAnalysisClicked.connect(self._on_start_analysis)
-        self.control_panel.measureToolClicked.connect(self._on_measure_tool)
+        # --- 控制面板信号 ---
+        # 图像与分析
+        self.control_panel.image_load_requested.connect(self._on_load_image)
+        self.control_panel.analysis_requested.connect(self._on_start_analysis)
+        self.control_panel.measure_tool_clicked.connect(self._on_measure_tool)
+        self.control_panel.analyzer_changed.connect(self._on_analyzer_changed)
+
+        # 参数管理
         self.control_panel.import_parameters_requested.connect(self._handle_import_parameters)
         self.control_panel.export_parameters_requested.connect(self._handle_export_parameters)
-        self.control_panel.analyzer_changed.connect(self._on_analyzer_changed)
         
-        # 连接控制器信号
+        # --- 控制器信号 ---
         self.controller.analysis_complete.connect(self._on_analysis_complete)
         self.controller.preview_state_changed.connect(self._on_preview_updated)
         self.controller.error_occurred.connect(self._on_error_occurred)
-        
+
     def _on_menu_open_image(self):
         """菜单栏打开图像处理函数。"""
+        # 复用加载逻辑
+        self._on_load_image()
+
+    def _on_load_image(self):
+        """响应加载图像请求，打开文件对话框，并处理图像加载。"""
         file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "选择图像文件",
-            "",
-            "图像文件 (*.jpg *.jpeg *.png *.bmp);;所有文件 (*)"
+            self, "选择一张岩心图像", "", "Image Files (*.png *.jpg *.bmp *.jpeg)"
         )
-        
-        if file_path:
-            self._on_load_image(file_path)
-        
-    def _on_load_image(self, file_path):
-        """加载图像处理函数。
-        
-        Args:
-            file_path (str): 图像文件的路径。
-        """
+        if not file_path:
+            return
+
         self.statusBar().showMessage(f"正在加载图像: {file_path}...")
         
         # 使用控制器加载图像
@@ -202,7 +200,7 @@ class MainWindow(QMainWindow):
             print(f"图像已成功加载: {file_path}")
         else:
             # 显示错误消息
-            QMessageBox.warning(self, "加载错误", message)
+            self._on_error_occurred(message)
             self.statusBar().showMessage("加载图像失败")
         
     def _on_save_results(self):
@@ -225,7 +223,7 @@ class MainWindow(QMainWindow):
         QApplication.restoreOverrideCursor()
         
     def _handle_import_parameters(self):
-        """处理导入参数请求。"""
+        """处理导入参数的请求。"""
         filepath, _ = QFileDialog.getOpenFileName(
             self, "导入参数文件", "", "JSON Files (*.json)"
         )
@@ -234,13 +232,13 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"已从 {filepath} 加载参数。")
 
     def _handle_export_parameters(self):
-        """处理导出参数请求。"""
+        """处理导出参数的请求。"""
         filepath, _ = QFileDialog.getSaveFileName(
-            self, "导出参数文件", "analysis_params.json", "JSON Files (*.json)"
+            self, "导出参数文件", "", "JSON Files (*.json)"
         )
         if filepath:
             self.controller.save_parameters(filepath)
-            self.statusBar().showMessage(f"参数已成功导出至 {filepath}。")
+            self.statusBar().showMessage(f"参数已保存至 {filepath}。")
 
     def _on_analysis_complete(self, results: dict):
         """分析完成处理函数。
@@ -288,6 +286,7 @@ class MainWindow(QMainWindow):
     def _on_analyzer_changed(self):
         """处理分析器切换的槽函数。"""
         # 清空旧的预览和结果
+        print("[DEBUG MainWindow] Analyzer changed, clearing old results.")
         self.main_preview_window.clear()
         self.result_panel.clear_results()
         
@@ -298,23 +297,28 @@ class MainWindow(QMainWindow):
 
         # 根据当前分析器创建新的结果对话框
         analyzer_id = self.controller.get_current_analyzer_id()
+        print(f"[DEBUG MainWindow] Current analyzer ID: {analyzer_id}")
         if analyzer_id in self.result_dialog_classes:
             # 如果已存在一个对话框，先关闭并删除
             if self.current_result_dialog:
+                print("[DEBUG MainWindow] Closing existing result dialog.")
                 self.current_result_dialog.close()
                 self.current_result_dialog.deleteLater()
 
             dialog_class = self.result_dialog_classes[analyzer_id]
+            print(f"[DEBUG MainWindow] Creating new result dialog: {dialog_class.__name__}")
             self.current_result_dialog = dialog_class(self.controller, self)
             self.current_result_dialog.show()
         
     def _on_preview_updated(self, payload: dict):
         """处理实时预览更新的槽函数。"""
+        print(f"[DEBUG MainWindow] Received preview_state_changed signal. Payload state: {payload.get('state')}")
         if self.current_result_dialog:
+            print("[DEBUG MainWindow] Forwarding payload to current result dialog.")
             self.current_result_dialog.update_content(payload)
         
     def closeEvent(self, event):
         """确保在主窗口关闭时，结果对话框也一并关闭。"""
         if self.current_result_dialog:
             self.current_result_dialog.close()
-        super().closeEvent(event) 
+        super().closeEvent(event)
