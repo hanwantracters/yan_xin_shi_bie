@@ -199,7 +199,23 @@ class Controller(QObject):
             
         try:
             dpi = self.current_dpi[0] if self.current_dpi and self.current_dpi[0] else 0.0
-            results = self.active_analyzer.run_analysis(self.current_image, self.analysis_params, dpi)
+            
+            # 创建参数的深拷贝，以防分析器内部修改
+            analysis_params = copy.deepcopy(self.analysis_params)
+            
+            # --- START: 特定于裂缝分析的参数预处理 ---
+            if self.active_analyzer.get_id() == 'fracture':
+                # 安全地获取以毫米为单位的最小长度
+                min_len_mm = analysis_params.get('filtering', {}).get('min_length_mm')
+                
+                # 如果存在有效的DPI和长度值，则进行单位转换
+                if min_len_mm is not None and dpi > 0:
+                    min_len_pixels = UnitConverter.mm_to_pixels(min_len_mm, dpi)
+                    # 将转换后的像素值赋给一个新的键，供分析器使用
+                    analysis_params.setdefault('filtering', {})['min_length_pixels'] = min_len_pixels
+            # --- END: 特定于裂缝分析的参数预处理 ---
+
+            results = self.active_analyzer.run_analysis(self.current_image, analysis_params, dpi)
             
             # 单位转换现在委托给分析器
             final_results = results

@@ -4,7 +4,7 @@
 
 ## 文件结构
 
--   **`controller.py`**: **业务逻辑层**。作为应用程序的中心协调器，负责管理分析策略和所有分析参数，并将具体业务逻辑**委托**给分析器。
+-   **`controller.py`**: **业务逻辑层**。作为应用程序的中心协调器，它管理分析策略和所有参数。它将核心分析任务**委托**给分析器，并负责在调用分析器前对UI参数进行预处理（如单位转换）。
 -   **`image_operations.py`**: **数据处理层**。提供了一系列原子化、可重用的通用图像处理函数（如高斯模糊、阈值算法等）。
 -   **`unit_converter.py`**: **工具**。提供像素单位与物理单位（毫米）之间的转换功能。
 -   **`constants.py`**: **通用工具**。定义了项目范围内使用的常量，如字典键名(`ResultKeys`)和预览状态(`PreviewState`)，以避免硬编码。
@@ -39,8 +39,8 @@
     -   维护当前激活分析器所需的所有参数 (`analysis_params`)。
     -   提供统一的 `update_parameter` 方法作为参数的**唯一修改入口**。
 -   **流程驱动 (职责分离与委托)**:
-    -   `Controller` 的核心职责是响应UI请求，然后调用 `active_analyzer` 的相应方法，将所有业务决策**委托**出去。
-    -   例如，`run_preview` 方法现在只负责调用 `active_analyzer.run_analysis()`，然后使用 `active_analyzer.is_result_empty()` 来判断结果，而不是自己硬编码判断逻辑。
+    -   `Controller` 的核心职责是响应UI请求，为分析器准备好参数，然后调用 `active_analyzer` 的相应方法将业务决策**委托**出去。
+    -   例如，在执行完整分析时，`Controller` 会先将UI传入的物理单位参数（如`min_length_mm`）转换为分析器所需的像素单位，然后再调用 `active_analyzer.run_analysis()`。
 -   **结果分发**:
     -   **状态化预览**: 通过 `preview_state_changed` 信号分发预览结果，UI层根据此信号更新显示。
     -   **最终结果**: 通过 `analysis_complete` 信号分发由`Analyzer`完成单位转换的最终测量数据。
