@@ -145,7 +145,10 @@ class PoreAnalyzer(BaseAnalyzer):
 
         # 距离变换确定前景
         dist_transform = cv2.distanceTransform(opening, cv2.DIST_L2, 5)
-        _, sure_fg = cv2.threshold(dist_transform, 0.6 * dist_transform.max(), 255, 0)
+        
+        # 使用可配置的比例
+        dist_threshold_ratio = params.get('distance_transform_threshold_ratio', 0.6)
+        _, sure_fg = cv2.threshold(dist_transform, dist_threshold_ratio * dist_transform.max(), 255, 0)
         
         # 寻找未知区域
         sure_fg = np.uint8(sure_fg)

@@ -13,7 +13,8 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QFormLayout,
     QGroupBox,
-    QSpinBox
+    QSpinBox,
+    QDoubleSpinBox
 )
 
 from src.app.core.controller import Controller
@@ -44,18 +45,23 @@ class PoreMorphologyDialog(QDialog):
         layout = QFormLayout(group_box)
 
         # 这些控件的objectName必须与PoreAnalyzer期望的参数键匹配
-        opening_ksize_spinbox = QSpinBox(objectName="morphology.opening_ksize")
-        opening_ksize_spinbox.setRange(1, 31); opening_ksize_spinbox.setSingleStep(2)
+        self.opening_ksize_spinbox = QSpinBox(objectName="morphology.opening_ksize")
+        self.opening_ksize_spinbox.setRange(1, 31); self.opening_ksize_spinbox.setSingleStep(2)
         
-        opening_iter_spinbox = QSpinBox(objectName="morphology.opening_iterations")
-        opening_iter_spinbox.setRange(1, 10)
+        self.opening_iter_spinbox = QSpinBox(objectName="morphology.opening_iterations")
+        self.opening_iter_spinbox.setRange(1, 10)
         
-        sure_bg_ksize_spinbox = QSpinBox(objectName="morphology.sure_bg_ksize")
-        sure_bg_ksize_spinbox.setRange(1, 31); sure_bg_ksize_spinbox.setSingleStep(2)
+        self.sure_bg_ksize_spinbox = QSpinBox(objectName="morphology.sure_bg_ksize")
+        self.sure_bg_ksize_spinbox.setRange(1, 31); self.sure_bg_ksize_spinbox.setSingleStep(2)
         
-        layout.addRow("前景开运算 - 核大小:", opening_ksize_spinbox)
-        layout.addRow("前景开运算 - 迭代:", opening_iter_spinbox)
-        layout.addRow("背景膨胀 - 核大小:", sure_bg_ksize_spinbox)
+        self.dist_ratio_spinbox = QDoubleSpinBox(objectName="morphology.distance_transform_threshold_ratio")
+        self.dist_ratio_spinbox.setRange(0.0, 1.0); self.dist_ratio_spinbox.setSingleStep(0.05)
+        self.dist_ratio_spinbox.setDecimals(2)
+
+        layout.addRow("前景开运算 - 核大小:", self.opening_ksize_spinbox)
+        layout.addRow("前景开运算 - 迭代:", self.opening_iter_spinbox)
+        layout.addRow("背景膨胀 - 核大小:", self.sure_bg_ksize_spinbox)
+        layout.addRow("前景识别比例:", self.dist_ratio_spinbox)
         
         main_layout.addWidget(group_box)
 
@@ -67,7 +73,7 @@ class PoreMorphologyDialog(QDialog):
 
     def _connect_signals(self):
         """连接所有参数控件的信号。"""
-        for spinbox in self.findChildren(QSpinBox):
+        for spinbox in self.findChildren((QSpinBox, QDoubleSpinBox)):
             spinbox.valueChanged.connect(self._on_parameter_changed)
 
     def _on_parameter_changed(self, value: int):
@@ -99,9 +105,10 @@ class PoreMorphologyDialog(QDialog):
         for spinbox in self.findChildren(QSpinBox):
             spinbox.blockSignals(True)
         try:
-            self.findChild(QSpinBox, "morphology.opening_ksize").setValue(p.get('opening_ksize', 3))
-            self.findChild(QSpinBox, "morphology.opening_iterations").setValue(p.get('opening_iterations', 2))
-            self.findChild(QSpinBox, "morphology.sure_bg_ksize").setValue(p.get('sure_bg_ksize', 3))
+            self.opening_ksize_spinbox.setValue(p.get('opening_ksize', 3))
+            self.opening_iter_spinbox.setValue(p.get('opening_iterations', 2))
+            self.sure_bg_ksize_spinbox.setValue(p.get('sure_bg_ksize', 3))
+            self.dist_ratio_spinbox.setValue(p.get('distance_transform_threshold_ratio', 0.6))
         finally:
             for spinbox in self.findChildren(QSpinBox):
                 spinbox.blockSignals(False) 

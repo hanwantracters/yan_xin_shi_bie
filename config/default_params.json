@@ -73,6 +73,7 @@
             "opening_ksize": 3,
             "opening_iterations": 2,
             "sure_bg_ksize": 3,
+            "distance_transform_threshold_ratio": 0.6,
             "ui_hints": { "realtime": true }
         },
         "filtering": {
