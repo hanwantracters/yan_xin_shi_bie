@@ -249,7 +249,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("分析完成")
         
         # 将量化结果分发给结果面板
-        self.result_panel.update_analysis_results(results.get('measurements', {}))
+        self.result_panel.update_analysis_results(results)
 
         # 将完整结果（包括预览图和最终图像）分发给工作台
         if self.current_result_dialog:

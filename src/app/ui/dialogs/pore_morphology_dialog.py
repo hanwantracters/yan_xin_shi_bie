@@ -95,7 +95,7 @@ class PoreMorphologyDialog(QDialog):
     def _request_morph_preview(self):
         """发射一个请求预览的信号。"""
         # 对于孔洞分析，形态学预览和二值化预览效果相同
-        self.realtime_preview_requested.emit(StageKeys.BINARY.value)
+        self.realtime_preview_requested.emit(StageKeys.MORPH.value)
 
     def update_controls(self, params: dict):
         """根据给定的参数字典更新所有UI控件的值。"""

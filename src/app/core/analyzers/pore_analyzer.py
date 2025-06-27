@@ -95,7 +95,18 @@ class PoreAnalyzer(BaseAnalyzer):
         
         previews[StageKeys.MORPH.value] = opening
 
-        # 对于孔洞分析，目前预览只支持到形态学处理
+        if stage_key == StageKeys.MORPH.value:
+             return { ResultKeys.PREVIEWS.value: previews }
+
+        # 4. 为分水岭算法准备标记 (用于预览)
+        markers, sure_fg, sure_bg, unknown = self._prepare_for_watershed(
+            opening, params.get('morphology', {})
+        )
+        previews[StageKeys.SURE_FG.value] = sure_fg
+        previews[StageKeys.SURE_BG.value] = sure_bg
+        previews[StageKeys.UNKNOWN.value] = unknown
+        
+        # 对于孔洞分析，目前预览只支持到这里
         return { ResultKeys.PREVIEWS.value: previews }
         
     def _apply_threshold(self, image: np.ndarray, params: dict) -> np.ndarray:

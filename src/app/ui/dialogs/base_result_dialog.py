@@ -98,6 +98,9 @@ class BaseResultDialog(QDialog):
             StageKeys.GRAY.value: "灰度图",
             StageKeys.BINARY.value: "二值图",
             StageKeys.MORPH.value: "形态学处理",
+            StageKeys.SURE_FG.value: "确定前景",
+            StageKeys.SURE_BG.value: "确定背景",
+            StageKeys.UNKNOWN.value: "未知区域",
         }
         for key, title in common_tabs_info.items():
             image_label = QLabel(); image_label.setAlignment(Qt.AlignCenter)

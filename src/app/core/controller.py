@@ -116,19 +116,16 @@ class Controller(QObject):
             
     def update_parameter(self, param_path: str, value: Any):
         """更新一个分析参数，并触发预览。"""
-        print(f"[DEBUG Controller] Attempting to update parameter: {param_path} with value: {value}")
         keys = param_path.split('.')
         d = self.analysis_params
         for key in keys[:-1]:
             d = d.setdefault(key, {})
         d[keys[-1]] = value
         
-        print(f"参数已更新: {param_path} = {value}")
         self.parameters_updated.emit(self.analysis_params)
 
     def request_realtime_preview(self, stage_key: Optional[str] = None):
         """响应UI的请求，执行一次预览。"""
-        print(f"[DEBUG Controller] request_realtime_preview called with stage_key: {stage_key}")
         self.run_preview(stage_key=stage_key)
 
     def load_image_from_file(self, file_path: str):
@@ -209,6 +206,7 @@ class Controller(QObject):
             if self.current_dpi and self.current_dpi[0]:
                 final_results = self.active_analyzer.post_process_measurements(results, self.current_dpi[0])
 
+          
             self.analysis_complete.emit(final_results)
             print("分析完成。")
         except Exception as e:

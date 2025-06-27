@@ -206,7 +206,7 @@ class ThresholdSettingsDialog(QDialog):
     def _on_parameter_changed(self, value=None):
         sender = self.sender()
         if not (sender and sender.objectName()): return
-        
+
         param_path = sender.objectName()
         
         # [修复] 重新实现清晰的逻辑来获取值
@@ -273,7 +273,7 @@ class ThresholdSettingsDialog(QDialog):
             self.findChild(QSpinBox, "threshold.window_size_spinbox").setValue(p_thresh.get('window_size', 51))
             self.findChild(QDoubleSpinBox, "threshold.k").setValue(p_thresh.get('k', 0.2))
             self.findChild(QSpinBox, "threshold.r_spinbox").setValue(p_thresh.get('r', 128))
-
+            
         finally:
             self._block_all_signals(False)
 

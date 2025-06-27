@@ -56,9 +56,10 @@
             "max_angle_diff": 15.0
         }
     },
-    "pore_watershed": {
+    "pore_watershed":
+    {
         "threshold": {
-            "method": "sauvola",
+            "method": "adaptive_gaussian",
             "value": 128,
             "block_size": 51,
             "c": 2,
@@ -67,18 +68,24 @@
             "r": 128,
             "ui_hints": {
                 "realtime": true
-            }
+            },
+            "adaptive_block_size": 51,
+            "window_size_spinbox": 3,
+            "global_value_spinbox": 110,
+            "adaptive_c_value": 10
         },
         "morphology": {
-            "opening_ksize": 3,
-            "opening_iterations": 2,
-            "sure_bg_ksize": 3,
-            "distance_transform_threshold_ratio": 0.6,
-            "ui_hints": { "realtime": true }
+            "opening_ksize": 1,
+            "opening_iterations": 1,
+            "sure_bg_ksize": 8,
+            "distance_transform_threshold_ratio": 0.2,
+            "ui_hints": {
+                "realtime": true
+            }
         },
         "filtering": {
-            "min_solidity": 0.85,
-            "min_area_pixels": 20
+            "min_solidity": 0.0,
+            "min_area_pixels": 0
         }
     }
 }

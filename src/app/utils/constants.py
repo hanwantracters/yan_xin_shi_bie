@@ -19,11 +19,14 @@ class ResultKeys(Enum):
     PREVIEWS = 'previews'
 
 class StageKeys(Enum):
-    """预览阶段的名称。"""
+    """定义了分析流程中各个阶段的键，用于预览。"""
     ORIGINAL = 'original'
-    GRAY = 'gray'
-    BINARY = 'binary'
-    MORPH = 'morph'
+    GRAY = "gray"
+    BINARY = "binary"
+    MORPH = "morph"
+    SURE_FG = "sure_fg"
+    SURE_BG = "sure_bg"
+    UNKNOWN = "unknown"
     DETECTION = 'detection'
 
 class PreviewState(Enum):

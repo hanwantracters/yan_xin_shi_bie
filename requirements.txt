@@ -1,5 +1,8 @@
 PyQt5==5.15.10
 numpy==1.26.4
 opencv-contrib-python==4.9.0.80
-Pillow==10.3.0
-scikit-image==0.23.2 
+Pillow
+scikit-image==0.23.2
+scipy
+pandas
+python-docx 
